@@ -1,0 +1,28 @@
+2025/08/06-16:21:49.396 90a8 Reusing MANIFEST C:\Users\n.amelaise\Desktop\mr martin\script\profiles\tmp_profile_audio_2_0\Default\IndexedDB\https_new.express.adobe.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/08/06-16:21:49.398 90a8 Recovering log #1468
+2025/08/06-16:21:49.402 90a8 Reusing old log C:\Users\n.amelaise\Desktop\mr martin\script\profiles\tmp_profile_audio_2_0\Default\IndexedDB\https_new.express.adobe.com_0.indexeddb.leveldb/001468.log 
+2025/08/06-16:22:03.246 1e80 Compacting 1@0 + 5@1 files
+2025/08/06-16:22:03.472 1e80 Generated table #1473@0: 81112 keys, 2280836 bytes
+2025/08/06-16:22:03.719 1e80 Generated table #1474@0: 64462 keys, 1940178 bytes
+2025/08/06-16:22:04.045 1e80 Generated table #1475@0: 74835 keys, 2267364 bytes
+2025/08/06-16:22:04.251 1e80 Generated table #1476@0: 57499 keys, 1741959 bytes
+2025/08/06-16:22:04.402 1e80 Generated table #1477@0: 57590 keys, 1910368 bytes
+2025/08/06-16:22:04.402 1e80 Compacted 1@0 + 5@1 files => 10140705 bytes
+2025/08/06-16:22:04.405 1e80 compacted to: files[ 0 5 27 0 0 0 0 ]
+2025/08/06-16:22:05.001 1e80 Compacting 1@1 + 8@2 files
+2025/08/06-16:22:05.051 1e80 Generated table #1478@1: 8840 keys, 2157228 bytes
+2025/08/06-16:22:05.101 1e80 Generated table #1479@1: 8527 keys, 2156388 bytes
+2025/08/06-16:22:05.146 1e80 Generated table #1480@1: 8533 keys, 2156364 bytes
+2025/08/06-16:22:05.198 1e80 Generated table #1481@1: 8564 keys, 2156187 bytes
+2025/08/06-16:22:05.276 1e80 Generated table #1482@1: 35421 keys, 2192761 bytes
+2025/08/06-16:22:05.357 1e80 Generated table #1483@1: 32272 keys, 2233878 bytes
+2025/08/06-16:22:05.492 1e80 Generated table #1484@1: 46697 keys, 2255816 bytes
+2025/08/06-16:22:05.635 1e80 Generated table #1485@1: 75376 keys, 2223211 bytes
+2025/08/06-16:22:05.636 1e80 Compacted 1@1 + 8@2 files => 17531833 bytes
+2025/08/06-16:22:05.638 1e80 compacted to: files[ 0 4 27 0 0 0 0 ]
+2025/08/06-16:22:05.639 1e80 Delete type=2 #1465
+2025/08/06-16:22:05.639 1e80 Delete type=2 #1466
+2025/08/06-16:22:05.639 1e80 Delete type=2 #1467
+2025/08/06-16:22:05.639 1e80 Delete type=2 #1469
+2025/08/06-16:22:05.639 1e80 Delete type=2 #1470
+2025/08/06-16:22:05.639 1e80 Delete type=2 #1471

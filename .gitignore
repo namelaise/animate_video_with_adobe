@@ -1,0 +1,15 @@
+# Ignore fichiers sensibles
+.env
+
+# Dossiers Python
+__pycache__/
+*.py[cod]
+
+# Fichiers temporaires / logs
+*.log
+*.tmp
+.DS_Store
+
+# Environnement virtuel
+venv/
+.env/

@@ -1,0 +1,28 @@
+[0.03s - 5.48s] SPEAKER_01 : Bonjour. Bonjour monsieur, je suis bien chez le fromagiste ? Oui tout à fait. Je vous appelle rapport à un fromage défectueux.
+[5.48s - 8.54s] SPEAKER_00 : que j'achetais chez vous ? Un fromage défectueux ? Non mais attendez vous me dites...
+[8.54s - 14.48s] SPEAKER_01 : Je vous dis que j'ai pris l'apéro, juste après j'ai mangé un bout de fromage, j'ai pris la voiture et hop, contrôlé positif par les gendarmes ici.
+[14.48s - 19.47s] SPEAKER_00 : à l'alcool. Non mais attendez, mais... ça c'est impossible, ça c'est impossible. Ah bah moi je peux vous dire que j'ai soufflé, ça m'a...
+[19.47s - 20.15s] SPEAKER_01 : 
+[19.57s - 29.8s] SPEAKER_03 : Non mais d'accord que vous ayez soufflé, ok, mais vous avez pris votre apéro con. Bah juste avant. Non mais justement juste avant, c'est l'apéro que vous aviez vu, excusez-moi de vous dire ça, mais quand même. Ah bah non, non, alors c'est...
+[23.61s - 24.4s] SPEAKER_01 : Bah, juste avant !
+[29.8s - 32.35s] SPEAKER_00 : Attendez, je m'allais en parler, on faut qu'on vous écoute dans le bureau.
+[32.35s - 35.22s] SPEAKER_01 : Donc on s'est mis d'accord que c'était le fromage qui m'avait alcoolifié ?
+[35.03s - 40.36s] SPEAKER_03 : On est pas responsable, c'est pas possible, c'est la première fois de notre vie qu'on nous dit des choses pareilles.
+[40.29s - 43.47s] SPEAKER_01 : Non mais parce que vous vous êtes habitué, j'imagine que peut-être vous tenez mieux le fromage ? Oui.
+[43.47s - 45.81s] SPEAKER_03 : Attendez, je vais vous passer donc...
+[45.81s - 50.13s] SPEAKER_02 : Oui allô ? Un autre monsieur. Vous avez été contre les positifs à l'alcool ? Oui.
+[46.74s - 47.11s] SPEAKER_03 : Merci !
+[51.42s - 53.93s] SPEAKER_02 : Alors, écoutez, arrêtez de manger du fromage !
+[53.93s - 54.98s] SPEAKER_01 : Donc il y a bien un problème ?
+[54.98s - 56.33s] SPEAKER_02 : Ah mais y'a pas de problème, y'a jamais !
+[57.98s - 60.17s] SPEAKER_02 : ...alcoolique dans le fromage.
+[59.75s - 62.91s] SPEAKER_01 : Enfin, il y en a plus parce que vous avez dû changer la recette, j'imagine.
+[62.74s - 73.15s] SPEAKER_02 : On a pas changé nos fabrications mais renseignez-vous ! Est-ce que vous rendez compte de ce que vous dites ? Ça veut dire que les enfants qui mangent du fromage, ils sont bourrés, ils sont testés positifs à l'alcool. Mais que...
+[73.15s - 74.01s] SPEAKER_01 : Et à l'horreur, les enfants !
+[74.01s - 95.9s] SPEAKER_02 : Mais y'a pas... Mais y'a pas de... Non mais alors ça ? Y'a pas de... OOOOOH ! Les enfants s'y mangent de fromage. Les... Tout le monde mange du fromage ! C'est un truc de dingue ! Il n'y a pas... Oh ! Non mais... Vous faites boire des enfants ? Mais je viens de vous dire... Si un enfant mange du fromage... Ah bah c'est illégal ! Mais... C'est illégal ! Mais vous rendez compte de ce que vous dites ? Y'a pas d'illégalité mais vous... Mais... Mais non mais là on marche à tête ! Ça veut dire qu'un enfant qui mange...
+[75.55s - 75.88s] SPEAKER_01 : 
+[86.6s - 87.63s] SPEAKER_01 : Ah bah c'est illégal !
+[95.88s - 98.8s] SPEAKER_01 : Ça veut dire qu'un enfant qui mange, c'est un enfant qui boit ! Ça j'ai bien compris !
+[100.1s - 102.97s] SPEAKER_01 : En tout cas moi, j'essaye d'éviter de faire boire mes enfants.
+[102.45s - 109.97s] SPEAKER_03 : Allo, oui bonjour ! Il y a de l'alcool dans le fromage ! Non mais attendez ! Mais c'est formidable, je suis obligée de rigoler là quand même !
+[104.37s - 104.82s] SPEAKER_01 : 
