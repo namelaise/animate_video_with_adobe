@@ -47,16 +47,15 @@ personnages_disponibles = {
 
 
 # 📂 Chemin de ton fichier audio
-AUDIO_PATH = r"C:\Users\n.amelaise\Desktop\mr martin\script\audio_segments\audio_1.mp3"
 
 # 🔐 Ton token Hugging Face (read only)
-HUGGINGFACE_TOKEN = "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"
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 
 banned_words = ["alcool", "alcoolisé", "chasseur", "chasse", "fusil", "tuer", "insulte", "dispute"]
 
 # --- CONFIGURATION DES DOSSIERS ---
-BASE_DIR = r'C:\Users\n.amelaise\Desktop\mr martin\script'
-MR_MARTIN_FOLDER = r'C:\Users\n.amelaise\Desktop\mr martin'
+BASE_DIR = os.getenv("BASE_DIR")
+MR_MARTIN_FOLDER = os.getenv("MR_MARTIN_FOLDER")
 RAW_VIDEO = os.path.join(BASE_DIR, '', 'Download.mp4')
 RAW_AUDIO_DIR = os.path.join(BASE_DIR, 'audio')
 AUDIO_SEGMENTS_DIR = os.path.join(BASE_DIR, 'audio_segments')
@@ -65,6 +64,9 @@ IMAGES_DIR = os.path.join(BASE_DIR, 'images')
 LEFT_IMG_DIR = os.path.join(IMAGES_DIR, 'left')
 RIGHT_IMG_DIR = os.path.join(IMAGES_DIR, 'right')
 
+AUDIO_PATH = os.path.join(RAW_AUDIO_DIR, 'audio_full.mp3')
+
+
 # Crée tous les dossiers s'ils n'existent pas
 for folder in [RAW_AUDIO_DIR, AUDIO_SEGMENTS_DIR, TRANSCRIPTS_DIR, IMAGES_DIR, LEFT_IMG_DIR, RIGHT_IMG_DIR]:
     os.makedirs(folder, exist_ok=True)
@@ -72,11 +74,10 @@ for folder in [RAW_AUDIO_DIR, AUDIO_SEGMENTS_DIR, TRANSCRIPTS_DIR, IMAGES_DIR, L
 
 # --- ETAPE 1 : EXTRAIRE L'AUDIO ---
 def extract_audio():
-    audio_path = os.path.join(RAW_AUDIO_DIR, 'audio_full.mp3')
-    cmd = f'ffmpeg -i "{RAW_VIDEO}" -q:a 0 -map a "{audio_path}" -y'
+    cmd = f'ffmpeg -i "{RAW_VIDEO}" -q:a 0 -map a "{AUDIO_PATH}" -y'
     subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    print(f"[✅] Audio extrait : {audio_path}")
-    return audio_path
+    print(f"✅ Audio extrait : {AUDIO_PATH}")
+    return AUDIO_PATH
 
 
 # --- ETAPE 2 : DECOUPER L'AUDIO (<2 min) ---
@@ -87,13 +88,13 @@ for file in os.listdir(AUDIO_SEGMENTS_DIR):
 
 
 
-def split_audio(audio_path, max_duration_sec=110):
-    audio = AudioSegment.from_file(audio_path)
+def split_audio( max_duration_sec=110):
+    audio = AudioSegment.from_file(AUDIO_PATH)
     segments = []
 
     total_parts = (len(audio) + max_duration_sec * 1000 - 1) // (max_duration_sec * 1000)
 
-    print("[...] Découpage audio en segments...")
+    print("⏳ Découpage audio en segments...")
     for i in tqdm(range(total_parts), desc="Découpage", unit="segment"):
         start = i * max_duration_sec * 1000
         end = start + max_duration_sec * 1000
@@ -105,47 +106,47 @@ def split_audio(audio_path, max_duration_sec=110):
         segment.export(seg_path, format="mp3")
         segments.append(seg_path)
 
-    print(f"[✅] Audio découpé : {len(segments)} segments")
+    print(f"✅ Audio découpé : {len(segments)} segments")
     return segments
 
 
 
 
-# --- ETAPE 3 : TRANSCRIRE CHAQUE SEGMENT ---
-def transcribe_segments(segments):
-    print("[...] Chargement du modèle Whisper 'medium'...")
-    model = whisper.load_model("medium")
-    print("[✅] Modèle chargé.")
+# # --- ETAPE 3 : TRANSCRIRE CHAQUE SEGMENT ---
+# def transcribe_segments(segments):
+#     print("⏳ Chargement du modèle Whisper 'medium'...")
+#     model = whisper.load_model("medium")
+#     print("✅ Modèle chargé.")
 
-    text_with_timestamps = ""
-    text_without_timestamps = ""
+#     text_with_timestamps = ""
+#     text_without_timestamps = ""
 
-    print("[...] Transcription en cours des segments audio...")
-    for seg in tqdm(segments, desc="Transcription", unit="segment"):
-        result = model.transcribe(seg, language="fr")
-        for phrase in result['segments']:
-            start = round(phrase['start'], 2)
-            end = round(phrase['end'], 2)
-            text = phrase['text'].strip()
-            text_with_timestamps += f"[{start} → {end}] {text}\n"
-            text_without_timestamps += f"{text}\n"
+#     print("⏳ Transcription en cours des segments audio...")
+#     for seg in tqdm(segments, desc="Transcription", unit="segment"):
+#         result = model.transcribe(seg, language="fr")
+#         for phrase in result['segments']:
+#             start = round(phrase['start'], 2)
+#             end = round(phrase['end'], 2)
+#             text = phrase['text'].strip()
+#             text_with_timestamps += f"[{start} → {end}] {text}\n"
+#             text_without_timestamps += f"{text}\n"
 
-        text_with_timestamps += "\n"
-        text_without_timestamps += "\n"
+#         text_with_timestamps += "\n"
+#         text_without_timestamps += "\n"
 
-    # Chemins des fichiers
-    path_segments = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
-    path_full = os.path.join(TRANSCRIPTS_DIR, "transcription_full.txt")
+#     # Chemins des fichiers
+#     path_segments = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
+#     path_full = os.path.join(TRANSCRIPTS_DIR, "transcription_full.txt")
 
-    # Sauvegarde
-    with open(path_segments, 'w', encoding='utf-8') as f:
-        f.write(text_with_timestamps)
+#     # Sauvegarde
+#     with open(path_segments, 'w', encoding='utf-8') as f:
+#         f.write(text_with_timestamps)
 
-    with open(path_full, 'w', encoding='utf-8') as f:
-        f.write(text_without_timestamps)
+#     with open(path_full, 'w', encoding='utf-8') as f:
+#         f.write(text_without_timestamps)
 
-    print("[✅] Transcription enregistrée avec et sans timestamps.")
-    return text_with_timestamps, text_without_timestamps
+#     print("✅ Transcription enregistrée avec et sans timestamps.")
+#     return text_with_timestamps, text_without_timestamps
 
 
 
@@ -153,46 +154,70 @@ def analyze_speakers_with_gpt(full_text):
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     prompt = f"""
-        🔧🎯 Prompt IA – Détection des intervenants et genres (version robuste, sans erreur)
-        Lis attentivement le script de conversation ci-dessous et retourne exclusivement un tableau JSON listant tous les intervenants (y compris Mr Martin).
+        🔧🎯 Prompt IA – Détection des intervenants et genres (version renforcée)
 
-        ✅ Objectif :
-        Pour chaque intervenant, fournis un objet JSON contenant :
+            Lis attentivement le script de conversation ci-dessous et retourne exclusivement un tableau JSON listant tous les intervenants (y compris Mr Martin).
 
-        "nom" : un nom générique comme "intervenant 1", "intervenant 2", etc. (sauf Mr Martin)
-        "genre" : "homme", "femme" ou "inconnu" selon les règles ci-dessous.
+            ✅ Objectif :
+            Pour chaque intervenant, fournis un objet JSON contenant :
 
-        🧠 Règles strictes de détection :
-        🔹 1. Mr Martin :
-        Toujours présent et toujours de genre "homme".
+            - "nom" : un nom générique comme "intervenant 1", "intervenant 2", etc. (sauf Mr Martin)
+            - "genre" : "homme", "femme" ou "inconnu" selon les règles ci-dessous.
 
-        🔹 2. Détection d’un nouvel intervenant :
-        Considère qu’une nouvelle voix apparaît lorsque :
-        - Il y a un changement de ton ou de style de langage évident.
-        - Une phrase type est présente, comme : "Je vous passe quelqu’un", "Oui bonjour", "Oh ?", etc.
+            🧠 Règles strictes de détection des intervenants :
 
-        🔹 3. Détection du genre d’un intervenant :
-        ✅ S’il y a une correction directe de la part de l’intervenant :
-        → Utilise ce genre.
+            🔹 1. Mr Martin :
+            Toujours présent. Il est l’auteur des canulars. Son nom est **"Mr Martin"**, genre **"homme"**.
 
-        🔄 Sinon, regarde comment Mr Martin s’adresse à l’intervenant :
-        → "Bonjour monsieur" → genre réel = "femme" (inversion volontaire).
-        → "Bonjour madame" → genre réel = "homme" (inversion volontaire).
+            🔹 2. Détection d’un nouvel intervenant (hors Mr Martin) :
+            Considère qu’une nouvelle voix/interlocuteur apparaît dans les cas suivants :
 
-        ❓ Si aucune info de genre → "inconnu".
+            ✅ Indices linguistiques :
+            - Phrases déclencheuses :  
+            "Allô", "Oui bonjour", "Ah bon ?", "Je vous passe quelqu’un",  
+            "Une autre dame", "Un autre monsieur",  
+            "Je vous le passe", "Je vous la passe",  
+            "Attendez je vous mets quelqu’un", etc.
 
-        🛑 Tu dois renommer tous les speakers détectés :
-        - Le speaker qui fait les canulars (Mr Martin) s’appelle toujours **"Mr Martin"**.
-        - Les autres speakers s’appellent **"intervenant 1"**, **"intervenant 2"**, etc., dans l’ordre de leur apparition (hors Mr Martin).
+            ✅ Indices de narration :
+            - Changement évident de ton, vocabulaire ou niveau de langage.
+            - Interruption ou reprise par un autre interlocuteur sans lien direct dans le discours.
+            - Mention explicite de la transmission de l’appel.
+
+            🔄 Ignore les répétitions de Mr Martin même s’il change de ton ou d’expression.
+
+            🧬 Règles de détection du genre :
+
+            ✅ Priorité 1 – Correction explicite par l’intervenant :
+            Exemples :
+            - "C’est pas monsieur, c’est madame" → genre = "femme"
+            - "Non je suis un homme" → genre = "homme"
+
+            ✅ Priorité 2 – Formulation inversée de Mr Martin :
+            Exemples :
+            - "Bonjour monsieur" → genre réel = **femme**
+            - "Bonjour madame" → genre réel = **homme**
+
+            ✅ Priorité 3 – Autres indices (facultatif) :
+            - Si un prénom est mentionné (ex : "Je vous passe Sandrine" → genre = femme)
+            - Si le genre reste ambigu → genre = "inconnu"
+
+            🛑 Important :
+            - **Renomme systématiquement** tous les intervenants :
+            - "Mr Martin" pour celui qui fait le canular.
+            - "intervenant 1", "intervenant 2", etc. dans **l’ordre d’apparition réelle**, hors Mr Martin.
+            - Les noms sont uniques dans le JSON final.
+            - Si une même personne parle à plusieurs reprises, elle doit **garder le même nom** (si identifiable).
+
+            🎯 Format attendu :
+            ```json
+            [
+                {{"nom": "Mr Martin", "genre": "homme"}},
+                {{"nom": "intervenant 1", "genre": "femme"}},
+                {{"nom": "intervenant 2", "genre": "inconnu"}}
+            ]
 
         ⚠️ Ne réponds **qu'avec du JSON valide** et rien d’autre. Aucun texte explicatif avant ou après.
-
-        Format attendu :
-        [
-        {{"nom": "Mr Martin", "genre": "homme"}},
-        {{"nom": "intervenant 1", "genre": "femme"}},
-        ...
-        ]
 
         Script :
         \"\"\"
@@ -200,7 +225,7 @@ def analyze_speakers_with_gpt(full_text):
         \"\"\"
     """
 
-    print("[...] Analyse des intervenants via GPT (nouvelle API)...")
+    print("⏳ Analyse des intervenants via GPT (nouvelle API)...")
     response = client.chat.completions.create(
         model="gpt-4",
         messages=[
@@ -212,7 +237,7 @@ def analyze_speakers_with_gpt(full_text):
     reply = response.choices[0].message.content
     try:
         speakers_data = json.loads(reply)
-        print(f"[✅] Intervenants détectés : {len(speakers_data)}")
+        print(f"✅ Intervenants détectés : {len(speakers_data)}")
 
         # 💾 Sauvegarde dans output/intervenants.json
         os.makedirs("output", exist_ok=True)
@@ -222,7 +247,7 @@ def analyze_speakers_with_gpt(full_text):
 
         return speakers_data
     except json.JSONDecodeError:
-        print("[❌] Réponse non JSON :")
+        print("❌  Réponse non JSON :")
         print(reply)
         return []
 
@@ -232,21 +257,29 @@ def analyze_speakers_with_gpt(full_text):
 # --- ETAPE 5 : GENERER PROMPT POUR IMAGE DE FOND ---
 def generate_prompt(full_text):
     prompt_intro = """
-    🎬 🎯 Prompt IA – Scène immersive absurde basée sur un script audio
-    Crée une image photoréalistterte haute résolution, au format carré 9:8, inspirée d’un script de conversation absurde fourni en entrée.
+🎬 🎯 Prompt IA – Scène immersive absurde basée sur un script audio
+Crée une image photoréaliste, au format carre9:8, inspirée d’un script de conversation absurde fourni en entrée.
 
-    🎨 Style global :
-    Ambiance réaliste moderne : architecture récente, éléments de décor contemporains (LEDs, enseignes lumineuses, mobilier récent, véhicules modernes).
-    Éclairage naturel ou fluorescent, comme un matin clair ou un lieu public bien éclairé.
-    Composition immersive, détails nets, textures visibles, profondeur de champ douce.
+Style visuel :
+Ambiance réaliste et contemporaine : éclairage naturel ou artificiel cohérent avec un lieu public ou semi-public 
+Décor détaillé et immersif, avec des textures visibles, une profondeur de champ douce et un cadrage fluide.
 
-    🌀 Contraste absurde :
-    Ajoute des éléments absurdes du script : objets déplacés, incohérences, panneaux mal traduits, mobilier mal placé, etc.
+Aucun personnage visible, mais des traces explicites d’activité humaine
+Utilise des couleurs vives 
 
-    🧩 Contexte :
-    Lieu extérieur ou semi-intérieur logique selon le script. Aucun personnage visible, mais des traces d’activité humaine.
+Contraste absurde à intégrer :
+Intègre des éléments absurdes ou incohérences visuelles directement inspirés du script fourni.
 
-    📝 Extrait du script :
+Les éléments incongrus doivent être visuellement intégrés dans le décor de façon réaliste, créant un effet de contraste intrigant ou comique.
+
+Les citations ou mots issus du script peuvent être visibles dans l’image
+
+Contexte :
+Choisis un lieu logique par rapport au script 
+L’environnement doit évoquer la scène sans l’illustrer littéralement, tout en offrant des indices visuels pour nourrir la curiosité du spectateur.
+
+Laisse libre cours à l'interprétation artistique, tant que l'image évoque clairement le ton absurde et la situation du dialogue.
+Extrait du script :
     """
 
     # ✂️ Couper et nettoyer le texte du script
@@ -255,30 +288,33 @@ def generate_prompt(full_text):
     for word in banned_words:
         cleaned_text = cleaned_text.replace(word, "")
 
-    script_excerpt = cleaned_text[:2500] + " [...]" if len(cleaned_text) > 2500 else cleaned_text
+    # script_excerpt = cleaned_text[:2500] + " ⏳" if len(cleaned_text) > 2500 else cleaned_text
 
-    final_prompt = prompt_intro.strip() + "\n\n" + script_excerpt
+    final_prompt = prompt_intro.strip() + "\n\n" + cleaned_text
 
     # Sauvegarde pour debug si besoin
     prompt_path = os.path.join(IMAGES_DIR, "prompt.txt")
     with open(prompt_path, "w", encoding="utf-8") as f:
         f.write(final_prompt)
 
-    print("[✅] Prompt généré avec script réduit.")
+    print("✅ Prompt généré avec script réduit.")
     return final_prompt
 
 
 
-def generate_image_with_openai(prompt_text, output_path):
+def generate_image_with_openai(text_without_timestamps):
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    print("[...] Génération de l'image via DALL·E en cours...")
+    image_path = os.path.join(IMAGES_DIR, "full_background.png")
+    prompt_text = generate_prompt(text_without_timestamps)
+
+    print("⏳ Génération de l'image via GPT en cours...")
 
     # 🔒 Liste de mots à risque
     banned_words = [
-        "femme", "femmes", "homme", "hommes", "droits", "violence",
+       "violence",
         "égalité", "militer", "syndicat", "CGT", "sexuel", "genre",
-        "banderole", "t-shirt", "contre", "pour", "discrimination",
-        "manifestation", "militant", "militante"
+       "t-shirt","discrimination",
+       
     ]
 
     # 🧼 Nettoyage du prompt
@@ -302,14 +338,14 @@ def generate_image_with_openai(prompt_text, output_path):
         image_bytes = base64.b64decode(image_base64)
 
         # Save the image to a file
-        with open(output_path, "wb") as f:
+        with open(image_path, "wb") as f:
             f.write(image_bytes)
 
-        print(f"[✅] Image générée avec GPT enregistrée : {output_path}")
-        return output_path
+        print(f"✅ Image générée avec GPT enregistrée : {image_path}")
+        return image_path
 
     except Exception as e:
-        print(f"[❌] Génération image échouée : {e}")
+        print(f"❌  Génération image échouée : {e}")
         return None
 
 # --- ETAPE 6 : CREER IMAGE PLACEHOLDER + DECOUPAGE 9:16 ---
@@ -319,7 +355,7 @@ def split_horizontal_image_to_tiktok_verticals():
 
     expected_width, expected_height = 1080, 960
     if img.size != (expected_width, expected_height):
-        print(f"[WARN] Redimension de l’image en {expected_width}x{expected_height} pour TikTok.")
+        print(f"⚠️ Redimension de l’image en {expected_width}x{expected_height} pour TikTok.")
         img = img.resize((expected_width, expected_height))
 
     # Découpe verticale
@@ -332,7 +368,7 @@ def split_horizontal_image_to_tiktok_verticals():
     left.save(left_path)
     right.save(right_path)
 
-    print("[✅] Deux images 9:16 générées pour TikTok.")
+    print("✅ Deux images 9:16 générées pour TikTok.")
     return left_path, right_path
 
 # 🔁 Mapping global des intervenants déjà associés à un personnage
@@ -342,17 +378,28 @@ def load_intervenants_and_segments():
     intervenants_path = os.path.join("output", "intervenants.json")
     audio_segments_path = os.path.join("audio_segments")
 
+    print("intervenants_path" ,  intervenants_path)
+    print("audio_segments_path" , audio_segments_path)
+
+
     if not os.path.exists(intervenants_path):
-        print("[❌] Le fichier intervenants.json est introuvable.")
+        print("❌  Le fichier intervenants.json est introuvable.")
         return []
 
     with open(intervenants_path, "r", encoding="utf-8") as f:
         intervenants = json.load(f)
 
+    
+    print("intervenants", intervenants)
+
     segments = [f for f in os.listdir(audio_segments_path) if f.endswith(".mp3")]
     segments.sort()
 
+    print("segments", segments)
+
     combinaison = []
+
+    print(combinaison, combinaison)
     
     # Copie de la liste des persos restants par genre
     personnages_restants = {
@@ -380,6 +427,8 @@ def load_intervenants_and_segments():
                 personnage_adobe = mapping_personnages[nom]
 
         intervenants[i]["personnage_adobe"] = personnage_adobe
+
+    print("intervenants", intervenants)
 
     for segment in segments:
         for i, intervenant in enumerate(intervenants):
@@ -415,11 +464,13 @@ def run_automate_adobe(job):
 def automate_generation_videos(max_threads=4):
     jobs = load_intervenants_and_segments()
 
+    print("jobs", jobs)
+
     if not jobs:
-        print("[❌] Aucun job à traiter.")
+        print("❌  Aucun job à traiter.")
         return
 
-    print(f"[...] Lancement en parallèle de {len(jobs)} jobs (max {max_threads} simultanés)")
+    print(f"⏳ Lancement en parallèle de {len(jobs)} jobs (max {max_threads} simultanés)")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
         executor.map(run_automate_adobe, jobs)
@@ -443,8 +494,14 @@ def archive_outputs():
         os.path.join(IMAGES_DIR, "prompt.txt"),
         os.path.join(IMAGES_DIR, "full_background.png"),
         os.path.join(LEFT_IMG_DIR, "left_0.png"),
-        os.path.join(RIGHT_IMG_DIR, "right_0.png")
+        os.path.join(RIGHT_IMG_DIR, "right_0.png"),
+        os.path.join("output", "intervenants.json"), 
+        os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt"),
+        os.path.join(TRANSCRIPTS_DIR, "transcription_full.txt"), 
     ]
+
+    if os.path.exists("audio_segments/tmp"):
+        shutil.rmtree("audio_segments/tmp", ignore_errors=True)
 
     for file in files_to_move:
         if os.path.exists(file):
@@ -459,34 +516,30 @@ def archive_outputs():
 
     print(f"✅ Tous les fichiers ont été archivés dans : {archive_dir}")
 
-
-# --- PIPELINE PRINCIPAL ---
-def main():
-    print("📦 Traitement initial démarré...")
-    audio_path = extract_audio()
-    split_audio(audio_path)
-
-    transcribe_segments_with_diarization( audio_path=AUDIO_PATH, hf_token=HUGGINGFACE_TOKEN )
-
+def get_transcription_file():
     transcription_path = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
     if not os.path.exists(transcription_path):
-        print("[❌] Le fichier transcription_segments.txt est introuvable.")
+        print("❌  Le fichier transcription_segments.txt est introuvable.")
         return []
 
     with open(transcription_path, "r", encoding="utf-8") as f:
         text_without_timestamps = f.read()
 
+        return text_without_timestamps
+
+
+
+# --- PIPELINE PRINCIPAL ---
+def main():
+    print("📦 Traitement initial démarré...")
+    extract_audio()
+    split_audio()
+    transcribe_segments_with_diarization(audio_path=AUDIO_PATH, hf_token=HUGGINGFACE_TOKEN )
+
+    text_without_timestamps = get_transcription_file()
     analyze_speakers_with_gpt(text_without_timestamps)
-    prompt = generate_prompt(text_without_timestamps)
-    image_path = os.path.join(IMAGES_DIR, "full_background.png")
-    # generate_image_with_openai(prompt, image_path)
+    generate_image_with_openai(text_without_timestamps)
     split_horizontal_image_to_tiktok_verticals()
-
-    # Appel à automate_diarization et sauvegarde dans diarization/
-    diarization_output_dir = os.path.join(BASE_DIR, "diarization")
-    os.makedirs(diarization_output_dir, exist_ok=True)
-
-    os.system("python automate_diarization.py")
 
     automate_generation_videos()
     archive_outputs()

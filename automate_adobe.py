@@ -101,6 +101,7 @@ async def main():
                 input_file = await page.query_selector('input[type="file"][accept*="image"]')
                 image_path = IMAGE_RIGHT_PATH if nom == "Mr Martin" else IMAGE_LEFT_PATH
                 await input_file.set_input_files(image_path)
+                await page.wait_for_timeout(10000)
                 print("✅ Image de fond chargée.")
             except:
                 print("❌ Erreur chargement image.")
@@ -125,7 +126,7 @@ async def main():
 
             # 9. Vérification toast erreur
             try:
-                await page.wait_for_selector('hz-toast[data-testid="hz-toast-negative"]', timeout=5000)
+                await page.wait_for_selector('hz-toast[data-testid="hz-toast-negative"]', timeout=10000)
                 print("❌ Erreur Adobe détectée, relance...")
                 await browser.close()
                 shutil.rmtree(TEMP_PROFILE_PATH, ignore_errors=True)
