@@ -1,26 +1,25 @@
 
 import os
 import subprocess
-import uuid
 from pydub import AudioSegment
-import whisper
 from PIL import Image, ImageDraw
 import os
 import base64
-from PIL import Image
 from io import BytesIO
 from openai import OpenAI
 import json
 from tqdm import tqdm
 import concurrent.futures
 import random
-import re
 import shutil
+import time
+
 from dotenv import load_dotenv
 
 from automate_diarization import transcribe_segments_with_diarization
 
 load_dotenv()
+
 
 # === Config ===
 
@@ -66,6 +65,7 @@ RIGHT_IMG_DIR = os.path.join(IMAGES_DIR, 'right')
 
 AUDIO_PATH = os.path.join(RAW_AUDIO_DIR, 'audio_full.mp3')
 
+RAW_VIDEO = os.getenv("RAW_VIDEO_PATH", os.path.join(BASE_DIR, 'Download.mp4'))
 
 # Crée tous les dossiers s'ils n'existent pas
 for folder in [RAW_AUDIO_DIR, AUDIO_SEGMENTS_DIR, TRANSCRIPTS_DIR, IMAGES_DIR, LEFT_IMG_DIR, RIGHT_IMG_DIR]:
@@ -378,10 +378,6 @@ def load_intervenants_and_segments():
     intervenants_path = os.path.join("output", "intervenants.json")
     audio_segments_path = os.path.join("audio_segments")
 
-    print("intervenants_path" ,  intervenants_path)
-    print("audio_segments_path" , audio_segments_path)
-
-
     if not os.path.exists(intervenants_path):
         print("❌  Le fichier intervenants.json est introuvable.")
         return []
@@ -389,18 +385,12 @@ def load_intervenants_and_segments():
     with open(intervenants_path, "r", encoding="utf-8") as f:
         intervenants = json.load(f)
 
-    
-    print("intervenants", intervenants)
 
     segments = [f for f in os.listdir(audio_segments_path) if f.endswith(".mp3")]
     segments.sort()
 
-    print("segments", segments)
-
     combinaison = []
 
-    print(combinaison, combinaison)
-    
     # Copie de la liste des persos restants par genre
     personnages_restants = {
         "homme": personnages_disponibles["homme"].copy(),
@@ -428,8 +418,6 @@ def load_intervenants_and_segments():
 
         intervenants[i]["personnage_adobe"] = personnage_adobe
 
-    print("intervenants", intervenants)
-
     for segment in segments:
         for i, intervenant in enumerate(intervenants):
             combinaison.append({
@@ -441,7 +429,6 @@ def load_intervenants_and_segments():
                 "personnage_adobe": intervenant["personnage_adobe"]
             })
 
-    # print(json.dumps(combinaison, indent=2, ensure_ascii=False))
     return combinaison
 
 
@@ -463,8 +450,6 @@ def run_automate_adobe(job):
 
 def automate_generation_videos(max_threads=4):
     jobs = load_intervenants_and_segments()
-
-    print("jobs", jobs)
 
     if not jobs:
         print("❌  Aucun job à traiter.")
@@ -496,7 +481,7 @@ def archive_outputs():
         os.path.join(LEFT_IMG_DIR, "left_0.png"),
         os.path.join(RIGHT_IMG_DIR, "right_0.png"),
         os.path.join("output", "intervenants.json"), 
-        os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt"),
+        # os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt"),
         os.path.join(TRANSCRIPTS_DIR, "transcription_full.txt"), 
     ]
 
@@ -517,15 +502,67 @@ def archive_outputs():
     print(f"✅ Tous les fichiers ont été archivés dans : {archive_dir}")
 
 def get_transcription_file():
-    transcription_path = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
+    transcription_path = os.path.join(TRANSCRIPTS_DIR, "transcription_full.txt")
     if not os.path.exists(transcription_path):
-        print("❌  Le fichier transcription_segments.txt est introuvable.")
+        print("❌  Le fichier transcription_full.txt est introuvable.")
         return []
 
     with open(transcription_path, "r", encoding="utf-8") as f:
         text_without_timestamps = f.read()
 
         return text_without_timestamps
+
+def get_transcription_file_with_verification(transcription_path):
+    """
+    Lit le fichier de transcription et affiche son contenu pour validation.
+    Si l'utilisateur appuie sur 'y' → on continue.
+    Si 'n' → on arrête le script.
+    Si aucune réponse en 5 min → on continue automatiquement.
+    """
+    if not os.path.exists(transcription_path):
+        print("❌ Le fichier transcription_full.txt est introuvable.")
+        return None
+
+    with open(transcription_path, "r", encoding="utf-8") as f:
+        text = f.read()
+
+    print("\n--- Aperçu de la transcription (début) ---")
+    print(text[:1500])  # Affiche les 1500 premiers caractères
+    print("--- Fin de l’aperçu ---\n")
+
+    print("✅ Le contenu vous semble-t-il correct ?")
+    print("Appuie sur [y] pour continuer, [n] pour arrêter, ou ne touche rien pour passer automatiquement dans 5 minutes.")
+
+    start_time = time.time()
+    timeout = 300  # 5 minutes
+
+    while True:
+        if time.time() - start_time > timeout:
+            print("⏳ Temps écoulé. Suite du traitement...")
+            return text
+
+        if os.name == 'nt':  # Windows
+            import msvcrt
+            if msvcrt.kbhit():
+                key = msvcrt.getwch().lower()
+                if key == 'y':
+                    print("➡️  Poursuite du traitement...")
+                    return text
+                elif key == 'n':
+                    print("❌ Traitement interrompu par l’utilisateur.")
+                    exit()
+        else:
+            import sys, select
+            if select.select([sys.stdin], [], [], 1)[0]:
+                key = sys.stdin.readline().strip().lower()
+                if key == 'y':
+                    print("➡️  Poursuite du traitement...")
+                    return text
+                elif key == 'n':
+                    print("❌ Traitement interrompu par l’utilisateur.")
+                    exit()
+        time.sleep(1)
+
 
 
 
@@ -536,7 +573,9 @@ def main():
     split_audio()
     transcribe_segments_with_diarization(audio_path=AUDIO_PATH, hf_token=HUGGINGFACE_TOKEN )
 
-    text_without_timestamps = get_transcription_file()
+    # text_without_timestamps = get_transcription_file()
+    transcription_path = os.path.join(TRANSCRIPTS_DIR, "transcription_full.txt")
+    text_without_timestamps = get_transcription_file_with_verification(transcription_path)
     analyze_speakers_with_gpt(text_without_timestamps)
     generate_image_with_openai(text_without_timestamps)
     split_horizontal_image_to_tiktok_verticals()

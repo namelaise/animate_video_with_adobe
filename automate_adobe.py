@@ -32,7 +32,7 @@ async def main():
     shutil.copytree(BASE_PROFILE_PATH, TEMP_PROFILE_PATH, dirs_exist_ok=True)
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch_persistent_context(TEMP_PROFILE_PATH, executable_path=CHROME_PATH, headless=False)
+        browser = await p.chromium.launch_persistent_context(TEMP_PROFILE_PATH, executable_path=CHROME_PATH, headless=True)
         page = await browser.new_page()
 
         try:
