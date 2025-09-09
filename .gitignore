@@ -15,6 +15,10 @@ config/
 venv/
 .env/
 
+#  Fichier videos 
+*.mp4
+*.mov
+
 # Fichier généréré par le script 
 audio/
 audio_segments/

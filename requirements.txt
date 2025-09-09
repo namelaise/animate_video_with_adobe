@@ -1,0 +1,13 @@
+pydub
+Pillow
+tqdm
+openai
+python-dotenv
+requests
+moviepy
+numpy
+pywin32
+wheel
+ffmpeg-python
+
+# Remarque : ffmpeg doit être installé séparément (non pip)
