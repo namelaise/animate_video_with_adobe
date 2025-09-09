@@ -21,6 +21,7 @@ audio_segments/
 generated_backgrounds/
 images/
 output/
+prompts/
 pretrained_models/
 profiles/
 transcripts/
