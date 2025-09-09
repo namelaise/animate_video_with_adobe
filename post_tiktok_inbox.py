@@ -1,0 +1,303 @@
+# post_tiktok_inbox.py
+# Upload en brouillon (Inbox) OU Post direct via TikTok Content Posting API — FILE_UPLOAD
+#
+# Usage (brouillon par défaut) :
+#   python post_tiktok_inbox.py --video <path> [--poll]
+#
+# Usage (post direct + caption) :
+#   python post_tiktok_inbox.py --video <path> --direct --caption "Ma légende #hashtag" --privacy SELF_ONLY --disable-comment
+#
+# Option pour forcer la taille des chunks :
+#   python post_tiktok_inbox.py --video <path> --chunk-mib 60 --poll
+#
+# Prérequis :
+#   - .env avec TIKTOK_USER_ACCESS_TOKEN=xxxxxxxx
+
+import os, math, json, argparse, requests
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()
+
+API_INIT_INBOX  = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
+API_INIT_DIRECT = "https://open.tiktokapis.com/v2/post/publish/video/init/"
+API_STATUS      = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
+
+MIB        = 1024 * 1024
+MIN_CHUNK  = 5  * MIB     # 5 MiB
+MAX_CHUNK  = 64 * MIB     # 64 MiB
+MAX_LAST   = 128 * MIB    # 128 MiB (dernier chunk max)
+
+def log(s):  print("[INFO]", s)
+def ok(s):   print("[OK]", s)
+def err(s):  print("[ERR]", s)
+
+def human_bytes(n: int) -> str:
+    f = float(n)
+    for u in ["B","KB","MB","GB","TB"]:
+        if f < 1024 or u == "TB":
+            return f"{f:.1f}{u}"
+        f /= 1024
+
+def ensure_token() -> str:
+    tok = (os.getenv("TIKTOK_USER_ACCESS_TOKEN") or "").strip()
+    if not tok:
+        raise SystemExit("[ERR] TIKTOK_USER_ACCESS_TOKEN manquant dans .env (lance d'abord l'auth/refresh).")
+    return tok
+
+def compute_plan_auto(total_size: int) -> tuple[int,int]:
+    """
+    Plan automatique conforme FILE_UPLOAD :
+      - Si total_size ≤ 64 MiB → 1 seul chunk = total_size
+      - Si 64 < total_size ≤ 128 MiB → 2 chunks (chunk_size ≈ half, borné 5..64 MiB)
+      - Si total_size > 128 MiB → chunk_size = 64 MiB, total_parts = floor(total/64)
+    NB: total_chunk_count = floor(total_size / chunk_size)
+    Le dernier chunk peut dépasser chunk_size (≤ 128 MiB).
+    """
+    if total_size <= MAX_CHUNK:
+        return total_size, 1
+
+    if total_size <= 2 * MAX_CHUNK:
+        # Forcer 2 chunks de ~ la moitié chacun (≤ 64 MiB)
+        half_mib   = max(MIN_CHUNK, min(MAX_CHUNK, (total_size // 2) // MIB * MIB))
+        chunk_size = half_mib
+        total_parts = total_size // chunk_size  # floor
+        if total_parts < 2:
+            total_parts = 2
+            chunk_size = max(MIN_CHUNK, min(MAX_CHUNK, (total_size // total_parts) // MIB * MIB))
+        return chunk_size, total_parts
+
+    # > 128 MiB → 64 MiB standard, floor parts
+    chunk_size  = MAX_CHUNK
+    total_parts = total_size // chunk_size  # floor (>= 2)
+    return chunk_size, total_parts
+
+def compute_plan_with_override(total_size: int, chunk_mib: int) -> tuple[int,int]:
+    """
+    Plan avec override utilisateur (chunk_mib forcé entre 5 et 64).
+    Respecte total_chunk_count = floor(total/chunk_size).
+    Si floor==1 et total>64 MiB, on ajuste pour 2 chunks.
+    """
+    if chunk_mib < 5 or chunk_mib > 64:
+        raise SystemExit(f"[ERR] --chunk-mib doit être entre 5 et 64 (reçu {chunk_mib}).")
+    chunk_size  = chunk_mib * MIB
+    total_parts = total_size // chunk_size  # floor
+
+    if total_parts == 0:
+        # un seul chunk (≤64 MiB)
+        return total_size, 1
+
+    if total_parts == 1 and total_size > MAX_CHUNK:
+        # 64 < total ≤ 128 MiB → forcer 2 chunks
+        total_parts = 2
+        chunk_size  = max(MIN_CHUNK, min(MAX_CHUNK, (total_size // total_parts) // MIB * MIB))
+
+    return chunk_size, total_parts
+
+def build_post_info(args) -> dict | None:
+    """
+    Construit le bloc post_info pour un POST DIRECT.
+    Champs supportés (noms API) :
+      - privacy_level: PUBLIC_TO_EVERYONE | MUTUAL_FOLLOW_FRIENDS | FOLLOWER_OF_CREATOR | SELF_ONLY
+      - title
+      - disable_duet, disable_stitch, disable_comment
+      - video_cover_timestamp_ms
+    """
+    if not args.direct:
+        return None
+    pi: dict = {
+        "privacy_level": args.privacy,
+    }
+    if args.caption:
+        pi["title"] = args.caption
+    if args.disable_duet:
+        pi["disable_duet"] = True
+    if args.disable_stitch:
+        pi["disable_stitch"] = True
+    if args.disable_comment:
+        pi["disable_comment"] = True
+    if args.cover_ms is not None:
+        pi["video_cover_timestamp_ms"] = args.cover_ms
+    return pi
+
+def init_file_upload(token: str,
+                     video_size: int,
+                     chunk_size: int,
+                     total_parts: int,
+                     direct: bool,
+                     post_info: dict | None) -> tuple[str, str]:
+    """
+    Appel INIT. Envoie un plan cohérent :
+      - chunk_size : 5..64 MiB (ou total_size si 1 chunk)
+      - total_chunk_count : floor(video_size / chunk_size)
+    """
+    # Cas "1 chunk" : pour rester conforme, on déclare chunk_size = video_size
+    if total_parts == 1:
+        chunk_size = video_size
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=UTF-8",
+    }
+    payload = {
+        "source_info": {
+            "source": "FILE_UPLOAD",
+            "video_size": video_size,
+            "chunk_size": chunk_size,
+            "total_chunk_count": total_parts
+        }
+    }
+    if direct and post_info:
+        payload["post_info"] = post_info
+
+    api = API_INIT_DIRECT if direct else API_INIT_INBOX
+    r = requests.post(api, headers=headers, json=payload, timeout=30)
+    if r.status_code != 200:
+        err(f"init({ 'DIRECT' if direct else 'INBOX' }) HTTP {r.status_code}: {r.text}")
+        raise SystemExit(1)
+    data = r.json().get("data") or {}
+    publish_id = data.get("publish_id", "")
+    upload_url = data.get("upload_url", "")
+    if not publish_id or not upload_url:
+        err(f"Réponse init incomplète: {r.text}")
+        raise SystemExit(1)
+    return publish_id, upload_url
+
+def put_chunk(upload_url: str, file_path: Path, start: int, length: int, total: int, part_idx: int, total_parts: int):
+    """
+    Envoie un chunk [start, start+length-1].
+    - Tous les chunks sauf le dernier : 5..64 MiB
+    - Dernier chunk : peut dépasser chunk_size, max 128 MiB
+    """
+    end = start + length - 1
+    if length <= 0:
+        raise SystemExit(f"[ERR] Longueur de chunk invalide (idx={part_idx}, len={length}).")
+    is_last = (part_idx == total_parts)
+    if not is_last and (length < MIN_CHUNK or length > MAX_CHUNK):
+        raise SystemExit(f"[ERR] Chunk #{part_idx} hors bornes (len={human_bytes(length)}).")
+    if is_last and length > MAX_LAST:
+        raise SystemExit(f"[ERR] Chunk final trop grand ({human_bytes(length)} > 128MB).")
+
+    headers = {
+        "Content-Range": f"bytes {start}-{end}/{total}",
+        "Content-Type": "video/mp4",
+    }
+    with file_path.open("rb") as f:
+        f.seek(start)
+        data = f.read(length)
+    r = requests.put(upload_url, headers=headers, data=data, timeout=300)
+    if r.status_code not in (200, 201, 206):
+        err(f"PUT chunk #{part_idx} {start}-{end} HTTP {r.status_code}: {r.text[:400]}")
+        raise SystemExit(1)
+
+def poll_status(token: str, publish_id: str):
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=UTF-8",
+    }
+    payload = {"publish_id": publish_id}
+    r = requests.post(API_STATUS, headers=headers, json=payload, timeout=30)
+    if r.status_code != 200:
+        err(f"status HTTP {r.status_code}: {r.text}")
+        return None
+    return r.json()
+
+def poll_status_until_done(token: str, publish_id: str, max_attempts: int = 24, delay: int = 5):
+    """Interroge TikTok jusqu'à SUCCESS ou FAILURE (~2 min par défaut)."""
+    import time
+    for attempt in range(1, max_attempts + 1):
+        st = poll_status(token, publish_id)
+        if not st:
+            log(f"Tentative {attempt}/{max_attempts}: réponse vide, on réessaie…")
+            time.sleep(delay)
+            continue
+
+        status = st.get("data", {}).get("status", "")
+        print(json.dumps(st, ensure_ascii=False, indent=2))
+
+        if status in ("SUCCESS", "FAILURE", "SEND_TO_USER_INBOX"):
+            ok(f"Statut final atteint: {status}")
+            return status
+        log(f"Tentative {attempt}/{max_attempts}: statut={status or 'N/A'}, nouvelle vérif dans {delay}s…")
+        time.sleep(delay)
+
+    err("Temps d'attente dépassé sans statut final.")
+    return None
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--video", required=True, help="Chemin MP4 à uploader/poster")
+    ap.add_argument("--poll", action="store_true", help="Interroger le statut après upload")
+
+    # Options de publication directe
+    ap.add_argument("--direct", action="store_true", help="Poster directement (sinon: upload en brouillon Inbox)")
+    ap.add_argument("--caption", type=str, default=None, help="Légende/description du post (Direct Post uniquement)")
+    ap.add_argument("--privacy", type=str, default="SELF_ONLY",
+                    choices=["PUBLIC_TO_EVERYONE","MUTUAL_FOLLOW_FRIENDS","FOLLOWER_OF_CREATOR","SELF_ONLY"],
+                    help="Niveau de visibilité (Direct Post). Par défaut SELF_ONLY.")
+    ap.add_argument("--disable-duet", dest="disable_duet", action="store_true", help="Désactiver Duet (Direct Post)")
+    ap.add_argument("--disable-stitch", dest="disable_stitch", action="store_true", help="Désactiver Stitch (Direct Post)")
+    ap.add_argument("--disable-comment", dest="disable_comment", action="store_true", help="Désactiver les commentaires (Direct Post)")
+    ap.add_argument("--cover-ms", dest="cover_ms", type=int, default=None,
+                    help="Timestamp (ms) pour choisir la vignette (Direct Post)")
+
+    # Option pour forcer le chunk (MiB)
+    ap.add_argument("--chunk-mib", dest="chunk_mib", type=int, default=None,
+                    help="Taille d'un chunk en MiB (5..64). Si non spécifié, calcul auto conforme.")
+
+    args = ap.parse_args()
+
+    token = ensure_token()
+    video_path = Path(args.video)
+    if not video_path.exists():
+        raise SystemExit(f"[ERR] Fichier introuvable: {video_path}")
+
+    total_size = video_path.stat().st_size
+
+    # Plan de chunks
+    if args.chunk_mib is not None:
+        chunk_size, total_parts = compute_plan_with_override(total_size, args.chunk_mib)
+    else:
+        chunk_size, total_parts = compute_plan_auto(total_size)
+
+    # Sanity check : total_chunk_count doit être floor(total/chunk)
+    # (Sauf cas 1 chunk où on enverra chunk_size = total_size à l'INIT)
+    if total_parts > 1 and (total_size // chunk_size) != total_parts:
+        # Réajuste proprement
+        total_parts = max(2, total_size // chunk_size)
+
+    log(f"Fichier: {video_path.name} ({human_bytes(total_size)}), chunk={human_bytes(chunk_size)}, parts={total_parts}")
+
+    post_info = build_post_info(args)
+
+    # 1) INIT (INBOX vs DIRECT)
+    publish_id, upload_url = init_file_upload(
+        token, total_size, chunk_size, total_parts,
+        direct=args.direct,
+        post_info=post_info
+    )
+    ok(f"Init OK ({'DIRECT' if args.direct else 'INBOX'}): publish_id={publish_id}")
+
+    # 2) UPLOAD séquentiel (FILE_UPLOAD)
+    start = 0
+    for part_idx in range(1, total_parts + 1):
+        remaining = total_size - start
+        length = remaining if part_idx == total_parts else min(chunk_size, remaining)
+        # Garde-fous
+        if part_idx != total_parts and (length < MIN_CHUNK or length > MAX_CHUNK):
+            raise SystemExit(f"[ERR] Chunk #{part_idx} hors bornes (len={human_bytes(length)}).")
+        if part_idx == total_parts and length > MAX_LAST:
+            raise SystemExit(f"[ERR] Chunk final trop grand ({human_bytes(length)} > 128MB).")
+
+        log(f"Envoi chunk {part_idx}/{total_parts} (offset {start}, taille {human_bytes(length)})")
+        put_chunk(upload_url, video_path, start, length, total_size, part_idx, total_parts)
+        start += length
+
+    ok("Upload terminé.")
+
+    # 3) (Optionnel) Statut
+    if args.poll:
+        log("Interrogation du statut de publication…")
+        poll_status_until_done(token, publish_id)
+
+if __name__ == "__main__":
+    main()

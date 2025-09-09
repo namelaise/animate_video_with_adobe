@@ -1,0 +1,20 @@
+Prompt IA – Scène immersive absurde et ultra-détaillée basée sur un script audio
+    Crée une image photo très réaliste et moderne, voir futurisque ou un peu luxueux, au format carré 9:8, inspirée d’un script de conversation absurde fourni en entrée.
+
+    Style visuel :
+    Ambiance réaliste et très moderne : éclairage naturel ou artificiel cohérent avec un lieu public ou semi-public et en cohérence avec le lieu du script
+    (ex: forêt, champ, magasin, etc) avec des couleurs vives.
+    Cadrage grand angle (profondeur / espace). Décor riche et immersif (textures, reflets, ombres), couleurs vives et contrastées (non cartoon).
+
+    Contraste absurde à intégrer :
+    Objets incongrus inspirés du script mais intégrés de façon réaliste (échelle étrange, objets flottants/mal placés).
+    Panneaux/affiches avec citations exactes du script en français (pub, pancarte bricolée, graffiti).
+    Plusieurs petites scènes absurdes en avant-plan et arrière-plan.
+
+    Contexte :
+    Lieu logique par rapport au script (marché, parking, plage, bureau…), vaste et détaillé.
+    Éléments de décor racontant une histoire secondaire absurde (stand inutile, pile d’objets improbables, comptoir à pancarte absurde).
+    Uniquement des traces d’activité humaine (pas de personnages visibles).
+
+    📝 Extrait du script :
+    {SCRIPT}

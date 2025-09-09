@@ -4,6 +4,7 @@
 # Dossiers Python
 __pycache__/
 *.py[cod]
+config/
 
 # Fichiers temporaires / logs
 *.log
@@ -13,3 +14,16 @@ __pycache__/
 # Environnement virtuel
 venv/
 .env/
+
+# Fichier généréré par le script 
+audio/
+audio_segments/
+generated_backgrounds/
+images/
+output/
+pretrained_models/
+profiles/
+transcripts/
+video_background/
+video_finale/
+xld_file/

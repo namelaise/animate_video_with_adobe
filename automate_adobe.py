@@ -7,6 +7,28 @@ import time
 import shutil
 from dotenv import load_dotenv
 
+# ===== NEW: generation image unie (fond vert) =====
+from PIL import Image
+
+def _parse_hex_color(hex_str: str):
+    """Retourne (r,g,b) à partir d'un hex '#RRGGBB' ou 'RRGGBB'."""
+    s = hex_str.strip()
+    if s.startswith("#"):
+        s = s[1:]
+    if len(s) != 6:
+        raise ValueError(f"Couleur hex invalide: {hex_str}")
+    r = int(s[0:2], 16)
+    g = int(s[2:4], 16)
+    b = int(s[4:6], 16)
+    return (r, g, b)
+
+def generate_solid_bg_png(path: str, hex_color: str, width: int, height: int):
+    """Crée un PNG uni (ex: vert chroma)"""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    rgb = _parse_hex_color(hex_color)
+    img = Image.new("RGB", (width, height), rgb)
+    img.save(path, "PNG")
+
 # --- Load .env
 load_dotenv()
 
@@ -16,6 +38,14 @@ BASE_DIR = os.getenv("BASE_DIR")
 URL_ADOBE = os.getenv("URL_ADOBE")
 IMAGE_LEFT_PATH = os.getenv("IMAGE_LEFT_PATH")
 IMAGE_RIGHT_PATH = os.getenv("IMAGE_RIGHT_PATH")
+VIDEO_SEGMENTS_DIR = os.getenv("VIDEO_SEGMENTS_DIR", os.path.join(BASE_DIR or "", "video_segments"))
+
+# ===== NEW: variables chroma =====
+CHROMA_BG = os.getenv("CHROMA_BG", "1")  # "1" => utilise le fond vert généré
+CHROMA_COLOR = os.getenv("CHROMA_COLOR", "#00B140")
+CHROMA_WIDTH = int(os.getenv("CHROMA_WIDTH", "1080"))
+CHROMA_HEIGHT = int(os.getenv("CHROMA_HEIGHT", "1920"))
+GENERATED_BG_DIR = os.path.join(BASE_DIR, "generated_backgrounds")
 
 # --- Entrées du script
 audio_path = sys.argv[1]
@@ -26,13 +56,30 @@ intervenant_index = sys.argv[5]
 personnage_id = sys.argv[6]
 
 TEMP_PROFILE_PATH = os.path.join(BASE_DIR, f"profiles/tmp_profile_{segment_id}_{intervenant_index}")
-MAX_RETRIES = 3
+MAX_RETRIES = 10
 
 async def main():
     shutil.copytree(BASE_PROFILE_PATH, TEMP_PROFILE_PATH, dirs_exist_ok=True)
 
+    # ===== NEW: prépare le chemin du fond vert personnalisé (unique par rendu)
+    chroma_filename = f"chroma_{CHROMA_WIDTH}x{CHROMA_HEIGHT}_{segment_id}_{intervenant_index}.png"
+    chroma_path = os.path.join(GENERATED_BG_DIR, chroma_filename)
+    if CHROMA_BG == "1":
+        # (re)génère si absent
+        if not os.path.exists(chroma_path):
+            try:
+                generate_solid_bg_png(chroma_path, CHROMA_COLOR, CHROMA_WIDTH, CHROMA_HEIGHT)
+                print(f"✅ Fond vert généré: {chroma_path}")
+            except Exception as e:
+                print(f"❌ Erreur génération fond vert: {e} — on bascule sur l'image de fond standard.")
+                # si la génération échoue, on utilisera les images classiques
+
     async with async_playwright() as p:
-        browser = await p.chromium.launch_persistent_context(TEMP_PROFILE_PATH, executable_path=CHROME_PATH, headless=True)
+        browser = await p.chromium.launch_persistent_context(
+            TEMP_PROFILE_PATH,
+            executable_path=CHROME_PATH,
+            headless=True
+        )
         page = await browser.new_page()
 
         try:
@@ -56,7 +103,7 @@ async def main():
                 await page.click(personnage_selector, timeout=10000)
                 print(f"✅ Personnage sélectionné : {nom}")
 
-                # 3. Réglage échelle à 33 %
+                # 3. Réglage échelle à ~33 %
                 try:
                     slider = await page.query_selector('input[type="range"][aria-label*="Échelle du personnage"]')
                     await slider.evaluate("(el) => el.value = 0.33")
@@ -96,15 +143,21 @@ async def main():
             except:
                 print("❌ Erreur ouverture onglet Arrière-plan.")
 
-            # 6. Ajout image de fond
+            # 6. Ajout image de fond (chroma si activé)
             try:
                 input_file = await page.query_selector('input[type="file"][accept*="image"]')
-                image_path = IMAGE_RIGHT_PATH if nom == "Mr Martin" else IMAGE_LEFT_PATH
+
+                # Choix de l'image de fond :
+                if CHROMA_BG == "1" and os.path.exists(chroma_path):
+                    image_path = chroma_path
+                else:
+                    image_path = IMAGE_RIGHT_PATH if nom == "Mr Martin" else IMAGE_LEFT_PATH
+
                 await input_file.set_input_files(image_path)
                 await page.wait_for_timeout(10000)
-                print("✅ Image de fond chargée.")
-            except:
-                print("❌ Erreur chargement image.")
+                print(f"✅ Image de fond chargée: {os.path.basename(image_path)}")
+            except Exception as e:
+                print(f"❌ Erreur chargement image de fond: {e}")
 
             # 7. Format 9:16
             try:
@@ -143,7 +196,7 @@ async def main():
                 download = await download_info.value
 
                 filename = f"{nom} - {genre} - {segment_id}.mp4"
-                output_path = os.path.join(BASE_DIR, filename)
+                output_path = os.path.join(VIDEO_SEGMENTS_DIR, filename)
                 await download.save_as(output_path)
 
                 print("✅ Vidéo téléchargée.")
