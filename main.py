@@ -545,37 +545,37 @@ def archive_outputs():
 def main():
     print("📦 Traitement initial démarré...")
 
-    # # 1) Extraire audio du RAW_VIDEO
-    # extract_audio_from_video()
+    # 1) Extraire audio du RAW_VIDEO
+    extract_audio_from_video()
 
-    # # 2) Transcription + diarisation
-    # transcribe_segments_with_diarization(audio_path=FULL_AUDIO_PATH, output_dir=TRANSCRIPTS_DIR)
+    # 2) Transcription + diarisation
+    transcribe_segments_with_diarization(audio_path=FULL_AUDIO_PATH, output_dir=TRANSCRIPTS_DIR)
 
-    # # 3) Vérification et réécriture avec intervenants
-    # raw_segments_txt = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
-    # segments_text_content = get_transcription_file_with_verification(raw_segments_txt)
+    # 3) Vérification et réécriture avec intervenants
+    raw_segments_txt = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
+    segments_text_content = get_transcription_file_with_verification(raw_segments_txt)
 
-    # rewritten_segments_path = rewrite_transcript_with_intervenants_gpt(
-    #     contenu_segments_brut=segments_text_content,
-    #     dossier_sortie=TRANSCRIPTS_DIR,
-    #     nom_fichier_sortie="transcription_segments_intervenants.txt",
-    # )
+    rewritten_segments_path = rewrite_transcript_with_intervenants_gpt(
+        contenu_segments_brut=segments_text_content,
+        dossier_sortie=TRANSCRIPTS_DIR,
+        nom_fichier_sortie="transcription_segments_intervenants.txt",
+    )
 
-    # # 4) Découpage MP3 selon segments réécrits
-    # cut_audio_by_diarization(
-    #     chemin_fichier_audio_mp3=FULL_AUDIO_PATH,
-    #     chemin_fichier_segments_txt=rewritten_segments_path,
-    #     dossier_sortie_segments_audio=AUDIO_SEGMENTS_DIR,
-    #     padding_millisecondes=80,
-    #     duree_minimale_conservee_millisecondes=250,
-    #     preferer_copie_flux=True,
-    # )
+    # 4) Découpage MP3 selon segments réécrits
+    cut_audio_by_diarization(
+        chemin_fichier_audio_mp3=FULL_AUDIO_PATH,
+        chemin_fichier_segments_txt=rewritten_segments_path,
+        dossier_sortie_segments_audio=AUDIO_SEGMENTS_DIR,
+        padding_millisecondes=80,
+        duree_minimale_conservee_millisecondes=250,
+        preferer_copie_flux=True,
+    )
 
-    # # 5) Image de fond + split 9:16 (⚠️ ici on passe le texte brut des segments pour garder le comportement existant)
-    # full_txt_path = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
-    # full_txt = get_transcription_file_with_verification(full_txt_path)
-    # generate_image_with_openai(full_txt)
-    # split_background_to_tiktok_pairs()
+    # 5) Image de fond + split 9:16 (⚠️ ici on passe le texte brut des segments pour garder le comportement existant)
+    full_txt_path = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
+    full_txt = get_transcription_file_with_verification(full_txt_path)
+    generate_image_with_openai(full_txt)
+    split_background_to_tiktok_pairs()
 
     # 6) Génération des vidéos segments (Adobe)
     automate_generation_videos(
@@ -627,7 +627,7 @@ def main():
         "--poll",                 # optionnel, pour suivre le statut
     ], check=True)
     
-    # archive_outputs()  
+    archive_outputs()  
 
     print("\n✅ Traitement terminé.")
 
