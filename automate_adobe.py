@@ -1,10 +1,10 @@
 import asyncio
 import sys
-from playwright.async_api import async_playwright
 import os
 import random
 import time
 import shutil
+from playwright.async_api import async_playwright
 from dotenv import load_dotenv
 
 # ===== NEW: generation image unie (fond vert) =====
