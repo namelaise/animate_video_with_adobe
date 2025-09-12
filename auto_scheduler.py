@@ -7,6 +7,7 @@ import subprocess
 import logging
 from datetime import datetime
 import sys
+from pathlib import Path
 
 # Configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -19,8 +20,8 @@ DOWNLOAD_CANDIDATES = [
 MAIN_INPUT_PATH = os.path.join(BASE_DIR, 'Download.mp4')
 COMPOSITE_DIR = os.path.join(BASE_DIR, 'video_composite')
 POSTED_DIR = os.path.join(COMPOSITE_DIR, 'posted')
-GENERATE_INTERVAL = 2 * 60 * 60  # 2 heures
-POST_INTERVAL = 2 * 60 * 60  # 2 heures
+GENERATE_INTERVAL = 10  # 2 minutes
+POST_INTERVAL = 10  # 2 minutes
 
 VIDEO_EXTS = ('.mp4', '.mov', '.mkv', '.avi')
 
@@ -60,6 +61,7 @@ def prepare_main_input(src_video):
             logging.info('La vidéo sélectionnée est déjà Download.mp4')
             return True
         shutil.copy2(src_video, MAIN_INPUT_PATH)
+        os.remove(src_video)
         logging.info(f'Copié {src_video} -> {MAIN_INPUT_PATH}')
         return True
     except Exception as e:
@@ -67,45 +69,61 @@ def prepare_main_input(src_video):
         return False
 
 
+def _pump_stream(pipe, log_fn):
+    # lit la sortie du process ligne par ligne et l’envoie au logger
+    for line in iter(pipe.readline, ''):
+        if not line:
+            break
+        log_fn(line.rstrip('\n'))
+    pipe.close()
+
 def run_main_script():
-    """Appelle main.py et attend la fin. Ne plante pas si main.py lève une erreur."""
+    """Lance main.py et STREAM les logs en temps réel dans la console."""
     try:
-        cmd = ['python', os.path.join(BASE_DIR, 'main.py')]
-        logging.info('Lancement de main.py')
-        cmd = [sys.executable, os.path.join(BASE_DIR, 'main.py')]
+        cmd = [
+            sys.executable,
+            "-X", "utf8",    # force UTF-8 sous Windows
+            "-u",            # unbuffered I/O => flush immédiat
+            os.path.join(BASE_DIR, 'main.py')
+        ]
         logging.info('Lancement de main.py avec %s', sys.executable)
-        # Forcer l'encodage UTF-8 dans le processus enfant (évite UnicodeEncodeError sous Windows)
+
         env = os.environ.copy()
-        env['PYTHONIOENCODING'] = env.get('PYTHONIOENCODING', 'utf-8')
-        env['PYTHONUTF8'] = env.get('PYTHONUTF8', '1')
-        res = subprocess.run(cmd, cwd=BASE_DIR, capture_output=True, text=True, timeout=60*60, env=env)
-        # remonter les logs pour diagnostic
-        if res.stdout:
-            logging.info('main.py stdout:\n%s', res.stdout)
-        if res.stderr:
-            logging.error('main.py stderr:\n%s', res.stderr)
-        # tenter de supprimer la vidéo source (copiée précédemment) pour ne pas la retraiter
-        try:
-            src = pick_video_for_processing()
-            if src and os.path.exists(src) and os.path.abspath(src) != os.path.abspath(MAIN_INPUT_PATH):
-                os.remove(src)
-            logging.info(f'Supprimé la vidéo source {src}')
-        except Exception:
-            logging.exception('Impossible de supprimer la vidéo source')
-        logging.info(f'main.py terminé avec code {res.returncode}')
-        if res.stdout:
-            logging.debug(res.stdout)
-        if res.stderr:
-            logging.debug(res.stderr)
-        return res.returncode == 0
-    except subprocess.TimeoutExpired:
-        logging.exception('main.py a expiré')
-        return False
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
+
+        # Popen pour streamer stdout/stderr
+        p = subprocess.Popen(
+            cmd,
+            cwd=BASE_DIR,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,              # line-buffered
+            env=env
+        )
+
+        # Threads qui pompent stdout/stderr et les renvoient au logger
+        t_out = threading.Thread(target=_pump_stream, args=(p.stdout, lambda s: logging.info("main.py: %s", s)))
+        t_err = threading.Thread(target=_pump_stream, args=(p.stderr, lambda s: logging.error("main.py: %s", s)))
+        t_out.daemon = True
+        t_err.daemon = True
+        t_out.start()
+        t_err.start()
+
+        rc = p.wait()
+        t_out.join(timeout=1)
+        t_err.join(timeout=1)
+
+        logging.info('main.py terminé avec code %s', rc)
+        return rc == 0
+
     except Exception:
-        logging.exception('Erreur lors de l execution de main.py')
+        logging.exception('Erreur lors de l’exécution streaming de main.py')
         return False
-
-
+    
 def collect_composite_videos():
     """Rassemble les fichiers vidéos générés et les place dans COMPOSITE_DIR."""
     candidates = []
@@ -139,7 +157,6 @@ def collect_composite_videos():
             logging.exception(f'Impossible de déplacer {src} vers {COMPOSITE_DIR}')
     return moved
 
-
 def generation_loop():
     while True:
         try:
@@ -152,36 +169,83 @@ def generation_loop():
                 ok = prepare_main_input(src)
                 if ok:
                     run_main_script()
-                    moved = collect_composite_videos()
-                    if moved:
-                        logging.info(f'Fichiers composites déplacés: {moved}')
-                    else:
-                        logging.info('Aucun fichier composite trouvé après le traitement')
             logging.info(f'Fin du cycle de génération. Pause {GENERATE_INTERVAL} secondes')
         except Exception:
             logging.exception('Erreur inattendue dans generation_loop')
         time.sleep(GENERATE_INTERVAL)
 
+def post_video(final_mp4, poll=True, extra_args=None, timeout=30*60):
+    """
+    Lance : python -X utf8 -u post_tiktok_inbox.py --video <final_mp4> [--poll] [extra_args...]
+    Stream les logs en temps réel. Retourne True si RC==0.
+    """
+    final_mp4 = str(Path(final_mp4))  # tolère Path/str
+    script = os.path.join(BASE_DIR, "post_tiktok_inbox.py")
 
-def post_video(video_path):
-    """Tente de publier la vidéo en appelant post_tiktok_inbox.py avec le chemin en argument."""
+    cmd = [
+        sys.executable,
+        "-X", "utf8",   # force UTF-8 (Windows-safe pour emojis)
+        "-u",           # unbuffered I/O
+        script,
+        "--video", final_mp4,
+    ]
+    if poll:
+        cmd.append("--poll")
+    if extra_args:
+        cmd.extend(list(extra_args))
+
+    logging.info("Lancement: %s", " ".join([repr(c) for c in cmd]))
+
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+
     try:
-        cmd = ['python', os.path.join(BASE_DIR, 'post_tiktok_inbox.py'), video_path]
-        logging.info(f'Lancement du post pour {video_path}')
-        res = subprocess.run(cmd, cwd=BASE_DIR, capture_output=True, text=True, timeout=30*60)
-        logging.info(f'post_tiktok_inbox.py terminé avec code {res.returncode}')
-        if res.stdout:
-            logging.debug(res.stdout)
-        if res.stderr:
-            logging.debug(res.stderr)
-        return res.returncode == 0
-    except subprocess.TimeoutExpired:
-        logging.exception('post_tiktok_inbox.py a expiré')
-        return False
-    except Exception:
-        logging.exception('Erreur lors de l appel a post_tiktok_inbox.py')
-        return False
+        p = subprocess.Popen(
+            cmd,
+            cwd=BASE_DIR,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            env=env,
+        )
 
+        t_out = threading.Thread(
+            target=_pump_stream,
+            args=(p.stdout, lambda s: logging.info("post_tiktok: %s", s)),
+            daemon=True
+        )
+        t_err = threading.Thread(
+            target=_pump_stream,
+            args=(p.stderr, lambda s: logging.error("post_tiktok: %s", s)),
+            daemon=True
+        )
+        t_out.start()
+        t_err.start()
+
+        try:
+            rc = p.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            logging.error("Timeout (%ss) — kill post_tiktok_inbox.py", timeout)
+            try:
+                p.kill()
+            finally:
+                t_out.join(timeout=1)
+                t_err.join(timeout=1)
+            return False
+
+        t_out.join(timeout=1)
+        t_err.join(timeout=1)
+
+        logging.info("post_tiktok_inbox.py terminé avec code %s", rc)
+        return rc == 0
+
+    except Exception:
+        logging.exception("Erreur lors de l’exécution de post_tiktok_inbox.py")
+        return False
 
 def posting_loop():
     while True:

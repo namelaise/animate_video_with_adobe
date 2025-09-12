@@ -10,7 +10,7 @@ import subprocess, sys
 import concurrent.futures
 from typing import List, Dict, Tuple
 from pathlib import Path
-
+from datetime import datetime
 from dotenv import load_dotenv
 from pydub import AudioSegment
 from PIL import Image
@@ -29,6 +29,18 @@ load_dotenv()
 # Nettoyage éventuel de logs
 if os.path.exists("automation_logs"):
     shutil.rmtree("automation_logs", ignore_errors=True)
+    
+# --- tout en haut de main.py ---
+import os, sys, io
+if os.name == "nt":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        # Pour Python <3.7 ou environnements particuliers
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
 
 # =========================
 #      CONFIG GLOBALE
@@ -536,6 +548,50 @@ def archive_outputs():
             print(f"📦 Vidéo archivée : {file}")
 
     print(f"✅ Tous les fichiers ont été archivés dans : {archive_dir}")
+    
+    
+# =========================
+#   DELETE
+# =========================        
+def delete_outputs():
+    files_to_delete = [
+        # RAW_VIDEO,
+        os.path.join(RAW_AUDIO_DIR, "audio_full.mp3"),
+        os.path.join(AUDIO_SEGMENTS_DIR, "audio_1.mp3"),
+        os.path.join(AUDIO_SEGMENTS_DIR, "audio_2.mp3"),
+        os.path.join(IMAGES_DIR, "prompt.txt"),
+        os.path.join(IMAGES_DIR, "full_background.png"),
+        os.path.join(LEFT_IMG_DIR, "left_0.png"),
+        os.path.join(RIGHT_IMG_DIR, "right_0.png"),
+        os.path.join("output", "intervenants.json"), 
+        os.path.join(TRANSCRIPTS_DIR, "transcription_full.txt"), 
+        os.path.join(TRANSCRIPTS_DIR, "transcription_segments_intervenants.txt"), 
+        os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt"), 
+        os.path.join(TRANSCRIPTS_DIR, "diarization_segments.json"), 
+        os.path.join(TRANSCRIPTS_DIR, "speakers.json"), 
+        os.path.join(BASE_DIR, "video_finale", "video_final.mp4"),
+    ]
+
+    if os.path.exists("audio_segments"):
+        shutil.rmtree("audio_segments", ignore_errors=True)
+    
+    if os.path.exists("video_segments"):
+        shutil.rmtree("video_segments", ignore_errors=True)
+    
+
+    for file in files_to_delete:
+        if os.path.exists(file):
+            os.remove(file)
+            print(f"📦 Fichier supprimé : {os.path.basename(file)}")
+
+    # Déplacement des .mp4 dans BASE_DIR
+    for file in os.listdir(BASE_DIR):
+        if file.endswith(".mp4"):
+            os.remove(os.path.join(BASE_DIR, file))
+            print(f"📦 Vidéo archivée : {file}")
+
+    print(f"✅ Tous les fichiers ont été supprimés ")
+
 
 
 # =========================
@@ -572,10 +628,10 @@ def main():
     )
 
     # 5) Image de fond + split 9:16 (⚠️ ici on passe le texte brut des segments pour garder le comportement existant)
-    full_txt_path = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
-    full_txt = get_transcription_file_with_verification(full_txt_path)
-    generate_image_with_openai(full_txt)
-    split_background_to_tiktok_pairs()
+    # full_txt_path = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
+    # full_txt = get_transcription_file_with_verification(full_txt_path)
+    # generate_image_with_openai(full_txt)
+    # split_background_to_tiktok_pairs()
 
     # 6) Génération des vidéos segments (Adobe)
     automate_generation_videos(
@@ -599,7 +655,8 @@ def main():
     )  
     
     # 8) Key & Overlay : suppression fond vert + superposition sur un background (choisi dans ./video_background)
-    composite_out = os.path.join(BASE_DIR, "video_finale", "video_composite.mp4")
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    composite_out = os.path.join(BASE_DIR, "video_finale",  f"video_{timestamp}.mp4")
     bg_dir = os.path.join(BASE_DIR, "video_background") 
                                     
     print("🎬 Key & Overlay (fond vert → background)…")
@@ -617,17 +674,18 @@ def main():
     ], check=True)
     
     
-    subprocess.run([sys.executable, "auth_tiktok_refresh.py"], check=True)
+    # subprocess.run([sys.executable, "auth_tiktok_refresh.py"], check=True)
 
-    # 2) upload en Inbox
-    final_mp4 = os.path.join(BASE_DIR, "video_finale", "video_composite.mp4")
-    subprocess.run([
-        sys.executable, "post_tiktok_inbox.py",
-        "--video", final_mp4,
-        "--poll",                 # optionnel, pour suivre le statut
-    ], check=True)
+    # # 2) upload en Inbox
+    # final_mp4 = os.path.join(BASE_DIR, "video_finale", "video_composite.mp4")
+    # subprocess.run([
+    #     sys.executable, "post_tiktok_inbox.py",
+    #     "--video", final_mp4,
+    #     "--poll",                 # optionnel, pour suivre le statut
+    # ], check=True)
     
-    archive_outputs()  
+    # archive_outputs()  
+    delete_outputs()  
 
     print("\n✅ Traitement terminé.")
 
