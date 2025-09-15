@@ -285,7 +285,7 @@ if __name__ == '__main__':
     t1 = threading.Thread(target=generation_loop, daemon=True)
     t2 = threading.Thread(target=posting_loop, daemon=True)
     t1.start()
-    t2.start()
+    # t2.start()
     logging.info('auto_scheduler démarré. Appuyez sur Ctrl+C pour quitter.')
     try:
         while True:
