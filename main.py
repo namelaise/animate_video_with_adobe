@@ -674,15 +674,15 @@ def main():
     ], check=True)
     
     
-    # subprocess.run([sys.executable, "auth_tiktok_refresh.py"], check=True)
+    subprocess.run([sys.executable, "auth_tiktok_refresh.py"], check=True)
 
-    # # 2) upload en Inbox
-    # final_mp4 = os.path.join(BASE_DIR, "video_finale", "video_composite.mp4")
-    # subprocess.run([
-    #     sys.executable, "post_tiktok_inbox.py",
-    #     "--video", final_mp4,
-    #     "--poll",                 # optionnel, pour suivre le statut
-    # ], check=True)
+    # 2) upload en Inbox
+    final_mp4 = os.path.join(BASE_DIR, "video_finale", "video_composite.mp4")
+    subprocess.run([
+        sys.executable, "post_tiktok_inbox.py",
+        "--video", final_mp4,
+        "--poll",                 # optionnel, pour suivre le statut
+    ], check=True)
     
     # archive_outputs()  
     delete_outputs()  
