@@ -10,7 +10,7 @@ import subprocess, sys
 import concurrent.futures
 from typing import List, Dict, Tuple
 from pathlib import Path
-
+from datetime import datetime
 from dotenv import load_dotenv
 from pydub import AudioSegment
 from PIL import Image
@@ -29,6 +29,18 @@ load_dotenv()
 # Nettoyage éventuel de logs
 if os.path.exists("automation_logs"):
     shutil.rmtree("automation_logs", ignore_errors=True)
+    
+# --- tout en haut de main.py ---
+import os, sys, io
+if os.name == "nt":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        # Pour Python <3.7 ou environnements particuliers
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
 
 # =========================
 #      CONFIG GLOBALE
@@ -536,6 +548,50 @@ def archive_outputs():
             print(f"📦 Vidéo archivée : {file}")
 
     print(f"✅ Tous les fichiers ont été archivés dans : {archive_dir}")
+    
+    
+# =========================
+#   DELETE
+# =========================        
+def delete_outputs():
+    files_to_delete = [
+        # RAW_VIDEO,
+        os.path.join(RAW_AUDIO_DIR, "audio_full.mp3"),
+        os.path.join(AUDIO_SEGMENTS_DIR, "audio_1.mp3"),
+        os.path.join(AUDIO_SEGMENTS_DIR, "audio_2.mp3"),
+        os.path.join(IMAGES_DIR, "prompt.txt"),
+        os.path.join(IMAGES_DIR, "full_background.png"),
+        os.path.join(LEFT_IMG_DIR, "left_0.png"),
+        os.path.join(RIGHT_IMG_DIR, "right_0.png"),
+        os.path.join("output", "intervenants.json"), 
+        os.path.join(TRANSCRIPTS_DIR, "transcription_full.txt"), 
+        os.path.join(TRANSCRIPTS_DIR, "transcription_segments_intervenants.txt"), 
+        os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt"), 
+        os.path.join(TRANSCRIPTS_DIR, "diarization_segments.json"), 
+        os.path.join(TRANSCRIPTS_DIR, "speakers.json"), 
+        os.path.join(BASE_DIR, "video_finale", "video_final.mp4"),
+    ]
+
+    if os.path.exists("audio_segments"):
+        shutil.rmtree("audio_segments", ignore_errors=True)
+    
+    if os.path.exists("video_segments"):
+        shutil.rmtree("video_segments", ignore_errors=True)
+    
+
+    for file in files_to_delete:
+        if os.path.exists(file):
+            os.remove(file)
+            print(f"📦 Fichier supprimé : {os.path.basename(file)}")
+
+    # Déplacement des .mp4 dans BASE_DIR
+    for file in os.listdir(BASE_DIR):
+        if file.endswith(".mp4"):
+            os.remove(os.path.join(BASE_DIR, file))
+            print(f"📦 Vidéo archivée : {file}")
+
+    print(f"✅ Tous les fichiers ont été supprimés ")
+
 
 
 # =========================
@@ -545,33 +601,33 @@ def archive_outputs():
 def main():
     print("📦 Traitement initial démarré...")
 
-    # # 1) Extraire audio du RAW_VIDEO
-    # extract_audio_from_video()
+    # 1) Extraire audio du RAW_VIDEO
+    extract_audio_from_video()
 
-    # # 2) Transcription + diarisation
-    # transcribe_segments_with_diarization(audio_path=FULL_AUDIO_PATH, output_dir=TRANSCRIPTS_DIR)
+    # 2) Transcription + diarisation
+    transcribe_segments_with_diarization(audio_path=FULL_AUDIO_PATH, output_dir=TRANSCRIPTS_DIR)
 
-    # # 3) Vérification et réécriture avec intervenants
-    # raw_segments_txt = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
-    # segments_text_content = get_transcription_file_with_verification(raw_segments_txt)
+    # 3) Vérification et réécriture avec intervenants
+    raw_segments_txt = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
+    segments_text_content = get_transcription_file_with_verification(raw_segments_txt)
 
-    # rewritten_segments_path = rewrite_transcript_with_intervenants_gpt(
-    #     contenu_segments_brut=segments_text_content,
-    #     dossier_sortie=TRANSCRIPTS_DIR,
-    #     nom_fichier_sortie="transcription_segments_intervenants.txt",
-    # )
+    rewritten_segments_path = rewrite_transcript_with_intervenants_gpt(
+        contenu_segments_brut=segments_text_content,
+        dossier_sortie=TRANSCRIPTS_DIR,
+        nom_fichier_sortie="transcription_segments_intervenants.txt",
+    )
 
-    # # 4) Découpage MP3 selon segments réécrits
-    # cut_audio_by_diarization(
-    #     chemin_fichier_audio_mp3=FULL_AUDIO_PATH,
-    #     chemin_fichier_segments_txt=rewritten_segments_path,
-    #     dossier_sortie_segments_audio=AUDIO_SEGMENTS_DIR,
-    #     padding_millisecondes=80,
-    #     duree_minimale_conservee_millisecondes=250,
-    #     preferer_copie_flux=True,
-    # )
+    # 4) Découpage MP3 selon segments réécrits
+    cut_audio_by_diarization(
+        chemin_fichier_audio_mp3=FULL_AUDIO_PATH,
+        chemin_fichier_segments_txt=rewritten_segments_path,
+        dossier_sortie_segments_audio=AUDIO_SEGMENTS_DIR,
+        padding_millisecondes=80,
+        duree_minimale_conservee_millisecondes=250,
+        preferer_copie_flux=True,
+    )
 
-    # # 5) Image de fond + split 9:16 (⚠️ ici on passe le texte brut des segments pour garder le comportement existant)
+    # 5) Image de fond + split 9:16 (⚠️ ici on passe le texte brut des segments pour garder le comportement existant)
     # full_txt_path = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
     # full_txt = get_transcription_file_with_verification(full_txt_path)
     # generate_image_with_openai(full_txt)
@@ -599,7 +655,8 @@ def main():
     )  
     
     # 8) Key & Overlay : suppression fond vert + superposition sur un background (choisi dans ./video_background)
-    composite_out = os.path.join(BASE_DIR, "video_finale", "video_composite.mp4")
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    composite_out = os.path.join(BASE_DIR, "video_finale",  f"video_{timestamp}.mp4")
     bg_dir = os.path.join(BASE_DIR, "video_background") 
                                     
     print("🎬 Key & Overlay (fond vert → background)…")
@@ -628,6 +685,7 @@ def main():
     ], check=True)
     
     # archive_outputs()  
+    delete_outputs()  
 
     print("\n✅ Traitement terminé.")
 
