@@ -369,7 +369,7 @@ def run_automate_adobe(job: Dict):
     """
     try:
         subprocess.run([
-            sys.executable, "automate_adobe.py",
+            sys.executable, "automate_adobe_with_bg.py",
             job["segment_file"],
             job["speaker_label"],
             job["speaker_genre"],
@@ -577,6 +577,9 @@ def delete_outputs():
     
     if os.path.exists("video_segments"):
         shutil.rmtree("video_segments", ignore_errors=True)
+
+    if os.path.exists("generated_backgrounds"):
+        shutil.rmtree("generated_backgrounds", ignore_errors=True)
     
 
     for file in files_to_delete:
@@ -589,6 +592,13 @@ def delete_outputs():
         if file.endswith(".mp4"):
             os.remove(os.path.join(BASE_DIR, file))
             print(f"📦 Vidéo archivée : {file}")
+
+
+    parent_dir = os.path.dirname(os.path.join(BASE_DIR, "video_composite","video_finale"))
+    count = len([d for d in os.listdir(parent_dir) if os.path.isdir(os.path.join(parent_dir, d))]) + 1
+    archive_dir = os.path.join(parent_dir, f"Video_{count}")
+    if os.path.exists("output"):
+        shutil.move( os.path.join(BASE_DIR, "video_finale", "video_composite.mp4"),  archive_dir)
 
     print(f"✅ Tous les fichiers ont été supprimés ")
 
@@ -628,14 +638,14 @@ def main():
     )
 
     # 5) Image de fond + split 9:16 (⚠️ ici on passe le texte brut des segments pour garder le comportement existant)
-    # full_txt_path = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
-    # full_txt = get_transcription_file_with_verification(full_txt_path)
-    # generate_image_with_openai(full_txt)
-    # split_background_to_tiktok_pairs()
+    full_txt_path = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
+    full_txt = get_transcription_file_with_verification(full_txt_path)
+    generate_image_with_openai(full_txt)
+    split_background_to_tiktok_pairs()
 
     # 6) Génération des vidéos segments (Adobe)
     automate_generation_videos(
-        max_threads=4,
+        max_threads=3,
         segments_txt_path=os.path.join(TRANSCRIPTS_DIR, "transcription_segments_intervenants.txt"),
         audio_segments_dir=AUDIO_SEGMENTS_DIR,
     )
@@ -655,34 +665,37 @@ def main():
     )  
     
     # 8) Key & Overlay : suppression fond vert + superposition sur un background (choisi dans ./video_background)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    composite_out = os.path.join(BASE_DIR, "video_finale",  f"video_{timestamp}.mp4")
+    # timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    # composite_out = os.path.join(BASE_DIR, "video_composite",  f"video_{timestamp}.mp4")
+    # bg_dir = os.path.join(BASE_DIR, "video_background") 
+
+    composite_out = os.path.join(BASE_DIR, "video_finale", "video_composite.mp4")
     bg_dir = os.path.join(BASE_DIR, "video_background") 
                                     
     print("🎬 Key & Overlay (fond vert → background)…")
-    subprocess.run([
-        sys.executable, "key_and_overlay.py",
-        "--actor", VIDEO_FINALE_PATH,
-        "--bg-dir", bg_dir,
-        "--out", composite_out,
-        "--key-color", "#00B140",
-        "--similarity", "0.18",
-        "--blend", "0.06",
-        "--final-pix-fmt", "yuv420p",   # compatibilité maximale (TikTok / lecteurs Windows)
-        # "--hdr-to-sdr",                 # convertit BT.2020/HLG -> BT.709 si nécessaire
-        "--verbose-ffmpeg",
-    ], check=True)
-    
-    
-    # subprocess.run([sys.executable, "auth_tiktok_refresh.py"], check=True)
-
-    # # 2) upload en Inbox
-    # final_mp4 = os.path.join(BASE_DIR, "video_finale", "video_composite.mp4")
     # subprocess.run([
-    #     sys.executable, "post_tiktok_inbox.py",
-    #     "--video", final_mp4,
-    #     "--poll",                 # optionnel, pour suivre le statut
+    #     sys.executable, "key_and_overlay.py",
+    #     "--actor", VIDEO_FINALE_PATH,
+    #     "--bg-dir", bg_dir,
+    #     "--out", composite_out,
+    #     "--key-color", "#00B140",
+    #     "--similarity", "0.18",
+    #     "--blend", "0.06",
+    #     "--final-pix-fmt", "yuv420p",   # compatibilité maximale (TikTok / lecteurs Windows)
+    #     # "--hdr-to-sdr",                 # convertit BT.2020/HLG -> BT.709 si nécessaire
+    #     "--verbose-ffmpeg",
     # ], check=True)
+    
+    
+    subprocess.run([sys.executable, "auth_tiktok_refresh.py"], check=True)
+
+    # 2) upload en Inbox
+    final_mp4 = os.path.join(BASE_DIR, "video_finale", "video_composite.mp4")
+    subprocess.run([
+        sys.executable, "post_tiktok_inbox.py",
+        "--video", final_mp4,
+        "--poll",                 # optionnel, pour suivre le statut
+    ], check=True)
     
     # archive_outputs()  
     delete_outputs()  
