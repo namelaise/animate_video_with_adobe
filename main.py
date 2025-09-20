@@ -16,6 +16,8 @@ from pydub import AudioSegment
 from PIL import Image
 from tqdm import tqdm
 from openai import OpenAI
+import asyncio
+from automate_adobe_with_bg import Task, run_pool
 
 from assemble_guarded import assemble_from_tail_with_transcript
 from segments_processing import (
@@ -25,6 +27,119 @@ from segments_processing import (
 from automate_diarization import transcribe_segments_with_diarization
 
 load_dotenv()
+
+
+# --- À mettre en haut du fichier (imports + setup logging) ---
+import os, sys, time, logging
+from contextlib import contextmanager
+from datetime import datetime
+from pathlib import Path
+
+import subprocess, shlex
+
+LOG_DIR = Path("./logs")
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+def run_cmd_capture(args: list[str], log_path: Path, env: dict | None = None, cwd: str | None = None):
+    """
+    Exécute une commande, capture stdout/stderr, write dans log_path et retourne (rc, out, err).
+    """
+    started = datetime.now().isoformat(timespec="seconds")
+    cmd_str = shlex.join(args)
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"\n=== {started} RUN: {cmd_str} ===\n")
+    proc = subprocess.run(args, capture_output=True, text=True, env=env, cwd=cwd)
+    out = proc.stdout or ""
+    err = proc.stderr or ""
+    with open(log_path, "a", encoding="utf-8") as f:
+        if out.strip():
+            f.write("--- STDOUT ---\n")
+            f.write(out + ("\n" if not out.endswith("\n") else ""))
+        if err.strip():
+            f.write("--- STDERR ---\n")
+            f.write(err + ("\n" if not err.endswith("\n") else ""))
+        f.write(f"=== RETURN CODE: {proc.returncode} ===\n")
+    return proc.returncode, out, err
+
+def preflight_mp4_checks(path: str) -> None:
+    """Vérifs rapides pour éviter des 4xx TikTok silencieux."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Fichier vidéo introuvable: {path}")
+    size_mb = os.path.getsize(path) / (1024*1024)
+    if size_mb < 1:
+        log.warning(f"⚠️ Vidéo très légère ({size_mb:.2f} MB) — risque de rejet.")
+    if size_mb > 5000:
+        log.error(f"🚫 Vidéo trop lourde ({size_mb:.0f} MB) — au-delà des limites usuelles.")
+        raise RuntimeError("Fichier vidéo trop volumineux")
+
+def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable) -> bool:
+    """
+    Tente upload Inbox → en cas d'‘access_token_invalid’/401: refresh token puis 1 retry.
+    Log détaillé: logs/upload_tiktok.log
+    """
+    log_path = LOG_DIR / "upload_tiktok.log"
+    preflight_mp4_checks(final_mp4)
+
+    def _post():
+        return run_cmd_capture(
+            [python_exe, "post_tiktok_inbox.py", "--video", final_mp4, "--poll"],
+            log_path
+        )
+
+    # 1) premier essai
+    rc, out, err = _post()
+    if rc == 0:
+        log.info("📤 Upload TikTok OK (1er essai)")
+        return True
+
+    blob = (out + "\n" + err).lower()
+    token_issue = ("access_token_invalid" in blob) or ("http 401" in blob) or ("unauthorized" in blob)
+
+    # 2) si token invalide: refresh puis retry
+    if token_issue:
+        log.warning("🔐 Token TikTok possiblement invalide → rafraîchissement…")
+        _ = run_cmd_capture([python_exe, "auth_tiktok_refresh.py"], log_path)
+        rc2, out2, err2 = _post()
+        if rc2 == 0:
+            log.info("📤 Upload TikTok OK après refresh token")
+            return True
+        else:
+            log.error("❌ Upload TikTok encore en échec après refresh. Voir logs/upload_tiktok.log")
+            return False
+
+    # 3) autre erreur : on laisse l’utilisateur voir les logs
+    log.error("❌ Upload TikTok échoué (pas un problème de token). Voir logs/upload_tiktok.log")
+    return False
+
+
+# Logging console + fichier (facultatif)
+LOG_DIR = Path("./logs")
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s: %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(LOG_DIR / "pipeline.log", encoding="utf-8")
+    ]
+)
+log = logging.getLogger("pipeline")
+
+@contextmanager
+def time_step(name: str):
+    """Context manager pour chronométrer une étape et logger durée + statut."""
+    log.info(f"🚀 Début étape: {name}")
+    t0 = time.perf_counter()
+    try:
+        yield
+    except Exception as e:
+        dt = time.perf_counter() - t0
+        log.exception(f"💥 Échec étape: {name} (⏱ {dt:.3f}s) — {e}")
+        raise
+    else:
+        dt = time.perf_counter() - t0
+        log.info(f"✅ Fin étape: {name} (⏱ {dt:.3f}s)\n\n")
+
 
 # Nettoyage éventuel de logs
 if os.path.exists("automation_logs"):
@@ -388,11 +503,7 @@ def automate_generation_videos(
     audio_segments_dir: str | None = None,
 ):
     """
-    Génère une vidéo par segment :
-      - lit le fichier texte réécrit (Mr Martin / homme N / femme N)
-      - associe chaque ligne à un mp3 découpé
-      - choisit le puppet
-      - lance automate_adobe.py en parallèle
+    Génère une vidéo par segment avec **un seul navigateur** et jusqu'à `max_threads` pages en parallèle.
     """
     segments_txt_path = segments_txt_path or os.path.join(TRANSCRIPTS_DIR, "transcription_segments_intervenants.txt")
     audio_segments_dir = audio_segments_dir or AUDIO_SEGMENTS_DIR
@@ -404,12 +515,12 @@ def automate_generation_videos(
         print(f"❌ Dossier audio introuvable : {audio_segments_dir}")
         return
 
-    lines = parse_segments_with_speakers(segments_txt_path)
+    lines = parse_segments_with_speakers(segments_txt_path)          # ← tu l’as déjà
     if not lines:
         print("❌ Aucune ligne valide dans le fichier segments.")
         return
 
-    mp3_files = list_audio_segments_sorted(audio_segments_dir)
+    mp3_files = list_audio_segments_sorted(audio_segments_dir)       # ← tu l’as déjà
     if not mp3_files:
         print("❌ Aucun segment audio .mp3 trouvé.")
         return
@@ -418,32 +529,31 @@ def automate_generation_videos(
     if len(lines) != len(mp3_files):
         print(f"⚠️ Nb lignes texte ({len(lines)}) ≠ nb mp3 ({len(mp3_files)}) — on traitera {pair_count} paires.")
 
-    jobs: List[Dict] = []
+    tasks: list[Task] = []
     for i in range(pair_count):
-        info = lines[i]
+        info = lines[i]           # ex: {"index": 3, "label": "Mr Martin", ...}
         mp3_path = mp3_files[i]
         label = info["label"]
-        genre, puppet = choose_puppet_for_label(label)
-        print("segment_file", mp3_path)
+        genre, puppet = choose_puppet_for_label(label)  # ← ta fonction existante
+        tasks.append(
+            Task(
+                audio_path=mp3_path,
+                nom=label,
+                genre=genre,
+                segment_id=str(info["index"]),
+                intervenant_index=str(_speaker_index_hint(label)),   # ← ta fonction existante
+                personnage_id=puppet,
+            )
+        )
 
-        jobs.append({
-            "segment_file": mp3_path,
-            "speaker_label": label,
-            "speaker_genre": genre,
-            "segment_index": info["index"],
-            "speaker_index_hint": _speaker_index_hint(label),
-            "personnage_adobe": puppet,
-        })
-
-    if not jobs:
+    if not tasks:
         print("❌ Aucun job à traiter.")
         return
 
-    print(f"⏳ Lancement de {len(jobs)} jobs (max {max_threads})")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
-        executor.map(run_automate_adobe, jobs)
-
+    print(f"⏳ Lancement de {len(tasks)} segments (max {max_threads} pages parallèles, 1 seul navigateur)")
+    asyncio.run(run_pool(tasks, concurrency=max_threads))
     print("✅ Toutes les vidéos animées ont été générées.")
+
 
 # =========================
 #   VERIFICATION TEXTE
@@ -582,11 +692,6 @@ def delete_outputs():
         shutil.rmtree("generated_backgrounds", ignore_errors=True)
     
 
-    for file in files_to_delete:
-        if os.path.exists(file):
-            os.remove(file)
-            print(f"📦 Fichier supprimé : {os.path.basename(file)}")
-
     # Déplacement des .mp4 dans BASE_DIR
     for file in os.listdir(BASE_DIR):
         if file.endswith(".mp4"):
@@ -594,11 +699,30 @@ def delete_outputs():
             print(f"📦 Vidéo archivée : {file}")
 
 
-    parent_dir = os.path.dirname(os.path.join(BASE_DIR, "video_composite","video_finale"))
-    count = len([d for d in os.listdir(parent_dir) if os.path.isdir(os.path.join(parent_dir, d))]) + 1
-    archive_dir = os.path.join(parent_dir, f"Video_{count}")
-    if os.path.exists("output"):
-        shutil.move( os.path.join(BASE_DIR, "video_finale", "video_composite.mp4"),  archive_dir)
+        archive_root = os.path.join(BASE_DIR, "archive")
+    os.makedirs(archive_root, exist_ok=True)
+
+    # Trouve le prochain index en ne regardant que les dossiers "Video_<num>"
+    existing = [
+        d for d in os.listdir(archive_root)
+        if os.path.isdir(os.path.join(archive_root, d)) and re.match(r"^Video_\d+$", d)
+    ]
+    next_idx = 1 + max((int(d.split("_")[1]) for d in existing), default=0)
+
+    archive_dir = os.path.join(archive_root, f"Video_{next_idx}")
+    os.makedirs(archive_dir, exist_ok=False)  # fail si collision, c’est voulu
+
+    src = os.path.join(BASE_DIR, "video_finale", "video_final.mp4")
+    if os.path.exists(src):
+        dst = os.path.join(archive_dir, "video_final.mp4")
+        shutil.move(src, dst)
+        print(f"✅ Vidéo archivée dans : {dst}")
+
+
+    for file in files_to_delete:
+        if os.path.exists(file):
+            os.remove(file)
+            print(f"📦 Fichier supprimé : {os.path.basename(file)}")
 
     print(f"✅ Tous les fichiers ont été supprimés ")
 
@@ -608,99 +732,112 @@ def delete_outputs():
 #      PIPELINE MAIN
 # =========================
 
+# --- Remplace ta fonction main() par celle-ci ---
 def main():
-    print("📦 Traitement initial démarré...")
+    log.info("📦 Traitement initial démarré…")
+    t_all = time.perf_counter()
 
     # 1) Extraire audio du RAW_VIDEO
-    extract_audio_from_video()
+    with time_step("1) Extraction audio depuis RAW_VIDEO"):
+        extract_audio_from_video()
 
     # 2) Transcription + diarisation
-    transcribe_segments_with_diarization(audio_path=FULL_AUDIO_PATH, output_dir=TRANSCRIPTS_DIR)
+    with time_step("2) Transcription + diarisation"):
+        transcribe_segments_with_diarization(
+            audio_path=FULL_AUDIO_PATH,
+            output_dir=TRANSCRIPTS_DIR
+        )
 
     # 3) Vérification et réécriture avec intervenants
-    raw_segments_txt = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
-    segments_text_content = get_transcription_file_with_verification(raw_segments_txt)
-
-    rewritten_segments_path = rewrite_transcript_with_intervenants_gpt(
-        contenu_segments_brut=segments_text_content,
-        dossier_sortie=TRANSCRIPTS_DIR,
-        nom_fichier_sortie="transcription_segments_intervenants.txt",
-    )
+    with time_step("3) Vérification + réécriture intervenants"):
+        raw_segments_txt = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
+        segments_text_content = get_transcription_file_with_verification(raw_segments_txt)
+        rewritten_segments_path = rewrite_transcript_with_intervenants_gpt(
+            contenu_segments_brut=segments_text_content,
+            dossier_sortie=TRANSCRIPTS_DIR,
+            nom_fichier_sortie="transcription_segments_intervenants.txt",
+        )
 
     # 4) Découpage MP3 selon segments réécrits
-    cut_audio_by_diarization(
-        chemin_fichier_audio_mp3=FULL_AUDIO_PATH,
-        chemin_fichier_segments_txt=rewritten_segments_path,
-        dossier_sortie_segments_audio=AUDIO_SEGMENTS_DIR,
-        padding_millisecondes=80,
-        duree_minimale_conservee_millisecondes=250,
-        preferer_copie_flux=True,
-    )
+    with time_step("4) Découpage MP3 par segments réécrits"):
+        cut_audio_by_diarization(
+            chemin_fichier_audio_mp3=FULL_AUDIO_PATH,
+            chemin_fichier_segments_txt=rewritten_segments_path,
+            dossier_sortie_segments_audio=AUDIO_SEGMENTS_DIR,
+            padding_millisecondes=80,
+            duree_minimale_conservee_millisecondes=250,
+            preferer_copie_flux=True,
+        )
 
-    # 5) Image de fond + split 9:16 (⚠️ ici on passe le texte brut des segments pour garder le comportement existant)
-    full_txt_path = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
-    full_txt = get_transcription_file_with_verification(full_txt_path)
-    generate_image_with_openai(full_txt)
-    split_background_to_tiktok_pairs()
+    # 5) Image de fond + split 9:16
+    with time_step("5) Génération image de fond + split 9:16"):
+        full_txt_path = os.path.join(TRANSCRIPTS_DIR, "transcription_segments.txt")
+        full_txt = get_transcription_file_with_verification(full_txt_path)
+        generate_image_with_openai(full_txt)
+        split_background_to_tiktok_pairs()
 
     # 6) Génération des vidéos segments (Adobe)
-    automate_generation_videos(
-        max_threads=3,
-        segments_txt_path=os.path.join(TRANSCRIPTS_DIR, "transcription_segments_intervenants.txt"),
-        audio_segments_dir=AUDIO_SEGMENTS_DIR,
-    )
+    with time_step("6) Génération vidéos segments (Adobe)"):
+        automate_generation_videos(
+            max_threads=4,
+            segments_txt_path=os.path.join(TRANSCRIPTS_DIR, "transcription_segments_intervenants.txt"),
+            audio_segments_dir=AUDIO_SEGMENTS_DIR,
+        )
 
     # 7) Assemblage final à partir des queues (durées = transcript)
-    transcript_segments_path = os.path.join(TRANSCRIPTS_DIR, "transcription_segments_intervenants.txt")
+    with time_step("7) Assemblage final (durées = transcript)"):
+        transcript_segments_path = os.path.join(TRANSCRIPTS_DIR, "transcription_segments_intervenants.txt")
+        assemble_from_tail_with_transcript(
+            video_segments_dir=VIDEO_SEGMENTS_DIR,
+            transcript_path=transcript_segments_path,
+            output_path=VIDEO_FINALE_PATH,
+            crf=18,
+            preset="veryfast",
+            audio_bitrate="192k",
+            min_keep_sec=0.10,
+            force_fps=60,  # garder le comportement existant
+        )
 
-    assemble_from_tail_with_transcript(
-        video_segments_dir=VIDEO_SEGMENTS_DIR,
-        transcript_path=transcript_segments_path,
-        output_path=VIDEO_FINALE_PATH,
-        crf=18,
-        preset="veryfast",
-        audio_bitrate="192k",
-        min_keep_sec=0.10,
-        force_fps=60,  # garder le comportement existant
-    )  
-    
-    # 8) Key & Overlay : suppression fond vert + superposition sur un background (choisi dans ./video_background)
-    # timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    # composite_out = os.path.join(BASE_DIR, "video_composite",  f"video_{timestamp}.mp4")
-    # bg_dir = os.path.join(BASE_DIR, "video_background") 
+    # 8) Key & Overlay + Upload TikTok
+    with time_step("8) Key & Overlay + Upload TikTok"):
+        composite_out = os.path.join(BASE_DIR, "video_finale", "video_composite.mp4")
+        bg_dir = os.path.join(BASE_DIR, "video_background")
+        log.info("🎬 Key & Overlay (fond vert → background)…")
 
-    composite_out = os.path.join(BASE_DIR, "video_finale", "video_composite.mp4")
-    bg_dir = os.path.join(BASE_DIR, "video_background") 
-                                    
-    print("🎬 Key & Overlay (fond vert → background)…")
-    # subprocess.run([
-    #     sys.executable, "key_and_overlay.py",
-    #     "--actor", VIDEO_FINALE_PATH,
-    #     "--bg-dir", bg_dir,
-    #     "--out", composite_out,
-    #     "--key-color", "#00B140",
-    #     "--similarity", "0.18",
-    #     "--blend", "0.06",
-    #     "--final-pix-fmt", "yuv420p",   # compatibilité maximale (TikTok / lecteurs Windows)
-    #     # "--hdr-to-sdr",                 # convertit BT.2020/HLG -> BT.709 si nécessaire
-    #     "--verbose-ffmpeg",
-    # ], check=True)
-    
-    
-    subprocess.run([sys.executable, "auth_tiktok_refresh.py"], check=True)
+        # Si tu veux relancer la phase de keying plus tard, dé-commente et ajuste :
+        # subprocess.run([
+        #     sys.executable, "key_and_overlay.py",
+        #     "--actor", VIDEO_FINALE_PATH,
+        #     "--bg-dir", bg_dir,
+        #     "--out", composite_out,
+        #     "--key-color", "#00B140",
+        #     "--similarity", "0.18",
+        #     "--blend", "0.06",
+        #     "--final-pix-fmt", "yuv420p",
+        #     # "--hdr-to-sdr",
+        #     # "--verbose-ffmpeg",
+        # ], check=True)
 
-    # 2) upload en Inbox
-    final_mp4 = os.path.join(BASE_DIR, "video_finale", "video_composite.mp4")
-    subprocess.run([
-        sys.executable, "post_tiktok_inbox.py",
-        "--video", final_mp4,
-        "--poll",                 # optionnel, pour suivre le statut
-    ], check=True)
-    
-    # archive_outputs()  
-    delete_outputs()  
+        # Rafraîchissement token (préventif, tu peux le laisser ou l’enlever)
+        run_cmd_capture([sys.executable, "auth_tiktok_refresh.py"], LOG_DIR / "upload_tiktok.log")
 
+        final_mp4 = os.path.join(BASE_DIR, "video_finale", "video_final.mp4")
+        ok = upload_to_tiktok_with_retry(final_mp4, python_exe=sys.executable)
+        if not ok:
+            # On remonte une erreur propre (sans stacktrace imbitable) et on arrête le pipeline
+            raise RuntimeError("Upload TikTok a échoué — consulte logs/upload_tiktok.log pour le détail")
+
+
+    # 9) Nettoyage / archivage
+    with time_step("9) Nettoyage des outputs"):
+        # archive_outputs()  # si tu veux archiver au lieu de supprimer
+        delete_outputs()
+
+    dt_all = (time.perf_counter() - t_all) / 60
+    log.info(f"🎉 Pipeline COMPLET terminé en {dt_all:.3f} minutes")
     print("\n✅ Traitement terminé.")
+
 
 if __name__ == "__main__":
     main()
+
