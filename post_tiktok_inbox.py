@@ -13,9 +13,10 @@
 # Prérequis :
 #   - .env avec TIKTOK_USER_ACCESS_TOKEN=xxxxxxxx
 
-import os, math, json, argparse, requests
+import os, math, json, argparse, requests, sys, subprocess
 from pathlib import Path
 from dotenv import load_dotenv
+
 load_dotenv()
 
 API_INIT_INBOX  = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
@@ -27,9 +28,13 @@ MIN_CHUNK  = 5  * MIB     # 5 MiB
 MAX_CHUNK  = 64 * MIB     # 64 MiB
 MAX_LAST   = 128 * MIB    # 128 MiB (dernier chunk max)
 
-def log(s):  print("[INFO]", s)
-def ok(s):   print("[OK]", s)
-def err(s):  print("[ERR]", s)
+def log(s):  print("[INFO]", s, flush=True)
+def ok(s):   print("[OK]", s, flush=True)
+def err(s):  print("[ERR]", s, flush=True)
+
+class AccessTokenInvalid(Exception):
+    """Le token d'accès est invalide ou manquant dans la requête."""
+    pass
 
 def human_bytes(n: int) -> str:
     f = float(n)
@@ -119,6 +124,17 @@ def build_post_info(args) -> dict | None:
         pi["video_cover_timestamp_ms"] = args.cover_ms
     return pi
 
+def _raise_if_token_invalid(resp: requests.Response):
+    # TikTok renvoie HTTP 401 + {"error":{"code":"access_token_invalid", ...}}
+    if resp.status_code == 401:
+        try:
+            j = resp.json()
+        except Exception:
+            j = {}
+        code = ((j.get("error") or {}).get("code") or "").lower()
+        if "access_token_invalid" in code or "access token" in (j.get("error", {}).get("message","").lower()):
+            raise AccessTokenInvalid(resp.text)
+
 def init_file_upload(token: str,
                      video_size: int,
                      chunk_size: int,
@@ -151,9 +167,17 @@ def init_file_upload(token: str,
 
     api = API_INIT_DIRECT if direct else API_INIT_INBOX
     r = requests.post(api, headers=headers, json=payload, timeout=30)
+
+    # Détection dédiée du token invalide
+    try:
+        _raise_if_token_invalid(r)
+    except AccessTokenInvalid:
+        raise
+
     if r.status_code != 200:
         err(f"init({ 'DIRECT' if direct else 'INBOX' }) HTTP {r.status_code}: {r.text}")
         raise SystemExit(1)
+
     data = r.json().get("data") or {}
     publish_id = data.get("publish_id", "")
     upload_url = data.get("upload_url", "")
@@ -196,6 +220,8 @@ def poll_status(token: str, publish_id: str):
     }
     payload = {"publish_id": publish_id}
     r = requests.post(API_STATUS, headers=headers, json=payload, timeout=30)
+    # Optionnel: si le token a expiré ici, on pourrait aussi rafraîchir, mais
+    # l’upload est déjà fait. On renvoie None et on laisse l’utilisateur relancer le poll.
     if r.status_code != 200:
         err(f"status HTTP {r.status_code}: {r.text}")
         return None
@@ -269,12 +295,32 @@ def main():
 
     post_info = build_post_info(args)
 
-    # 1) INIT (INBOX vs DIRECT)
-    publish_id, upload_url = init_file_upload(
-        token, total_size, chunk_size, total_parts,
-        direct=args.direct,
-        post_info=post_info
-    )
+    # 1) INIT (INBOX vs DIRECT) — avec auto refresh token si 401/access_token_invalid
+    try:
+        publish_id, upload_url = init_file_upload(
+            token, total_size, chunk_size, total_parts,
+            direct=args.direct,
+            post_info=post_info
+        )
+    except AccessTokenInvalid as e:
+        err("Token invalide/expiré détecté à l'INIT. Lancement de auth_refreshtoken.py…")
+        try:
+            # Utilise le même interpréteur Python actif
+            subprocess.run([sys.executable, "auth_tiktok_refresh.py"], check=True)
+        except subprocess.CalledProcessError as sube:
+            raise SystemExit(f"[ERR] Échec auth_refreshtoken.py: {sube}") from sube
+
+        # Recharge le .env et récupère à nouveau le token
+        load_dotenv(override=True)
+        token = ensure_token()
+        ok("Token rafraîchi. Nouvelle tentative INIT…")
+        # Seconde tentative
+        publish_id, upload_url = init_file_upload(
+            token, total_size, chunk_size, total_parts,
+            direct=args.direct,
+            post_info=post_info
+        )
+
     ok(f"Init OK ({'DIRECT' if args.direct else 'INBOX'}): publish_id={publish_id}")
 
     # 2) UPLOAD séquentiel (FILE_UPLOAD)

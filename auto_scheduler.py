@@ -9,7 +9,9 @@ from datetime import datetime
 import sys
 from pathlib import Path
 
+# ==============================
 # Configuration
+# ==============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DOWNLOAD_CANDIDATES = [
     os.path.join(BASE_DIR, 'download'),
@@ -20,14 +22,38 @@ DOWNLOAD_CANDIDATES = [
 MAIN_INPUT_PATH = os.path.join(BASE_DIR, 'Download.mp4')
 COMPOSITE_DIR = os.path.join(BASE_DIR, 'video_composite')
 POSTED_DIR = os.path.join(COMPOSITE_DIR, 'posted')
-GENERATE_INTERVAL = 10  # 2 minutes
-POST_INTERVAL = 10  # 2 minutes
+LOG_DIR = os.path.join(BASE_DIR, "logs")
+LOG_FILE = os.path.join(LOG_DIR, "log.txt")
+
+GENERATE_INTERVAL = 10   # secondes (ici mis à 10 pour test)
+POST_INTERVAL = 10       # secondes (idem)
 
 VIDEO_EXTS = ('.mp4', '.mov', '.mkv', '.avi')
 
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
+# ==============================
+# Logging (console + fichier)
+# ==============================
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
+
+# Handler console
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+
+# Handler fichier
+file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
 
+# ==============================
+# Fonctions
+# ==============================
 def ensure_dirs():
     os.makedirs(COMPOSITE_DIR, exist_ok=True)
     os.makedirs(POSTED_DIR, exist_ok=True)
@@ -50,7 +76,6 @@ def pick_video_for_processing():
     vids = find_download_videos()
     if not vids:
         return None
-    # choisit la première (chronologique)
     return vids[0]
 
 
@@ -70,20 +95,20 @@ def prepare_main_input(src_video):
 
 
 def _pump_stream(pipe, log_fn):
-    # lit la sortie du process ligne par ligne et l’envoie au logger
     for line in iter(pipe.readline, ''):
         if not line:
             break
         log_fn(line.rstrip('\n'))
     pipe.close()
 
+
 def run_main_script():
-    """Lance main.py et STREAM les logs en temps réel dans la console."""
+    """Lance main.py et STREAM les logs en temps réel dans la console + fichier."""
     try:
         cmd = [
             sys.executable,
-            "-X", "utf8",    # force UTF-8 sous Windows
-            "-u",            # unbuffered I/O => flush immédiat
+            "-X", "utf8",
+            "-u",
             os.path.join(BASE_DIR, 'main.py')
         ]
         logging.info('Lancement de main.py avec %s', sys.executable)
@@ -92,7 +117,6 @@ def run_main_script():
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
 
-        # Popen pour streamer stdout/stderr
         p = subprocess.Popen(
             cmd,
             cwd=BASE_DIR,
@@ -101,11 +125,10 @@ def run_main_script():
             text=True,
             encoding="utf-8",
             errors="replace",
-            bufsize=1,              # line-buffered
+            bufsize=1,
             env=env
         )
 
-        # Threads qui pompent stdout/stderr et les renvoient au logger
         t_out = threading.Thread(target=_pump_stream, args=(p.stdout, lambda s: logging.info("main.py: %s", s)))
         t_err = threading.Thread(target=_pump_stream, args=(p.stderr, lambda s: logging.error("main.py: %s", s)))
         t_out.daemon = True
@@ -123,39 +146,8 @@ def run_main_script():
     except Exception:
         logging.exception('Erreur lors de l’exécution streaming de main.py')
         return False
-    
-def collect_composite_videos():
-    """Rassemble les fichiers vidéos générés et les place dans COMPOSITE_DIR."""
-    candidates = []
-    # chercher dans dossiers habituels
-    search_dirs = [
-        os.path.join(BASE_DIR, 'video_finale'),
-        os.path.join(BASE_DIR, 'output'),
-        os.path.join(BASE_DIR, 'video_segments'),
-        BASE_DIR,
-    ]
-    for d in search_dirs:
-        if os.path.isdir(d):
-            for ext in VIDEO_EXTS:
-                candidates.extend(glob.glob(os.path.join(d, f'*{ext}')))
-    # filtrer Download.mp4
-    candidates = [c for c in candidates if os.path.abspath(c) != os.path.abspath(MAIN_INPUT_PATH)]
 
-    moved = []
-    for src in sorted(set(candidates), key=lambda p: os.path.getmtime(p)):
-        try:
-            dest = os.path.join(COMPOSITE_DIR, os.path.basename(src))
-            # éviter d'écraser
-            if os.path.exists(dest):
-                base, ext = os.path.splitext(os.path.basename(src))
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                dest = os.path.join(COMPOSITE_DIR, f"{base}_{timestamp}{ext}")
-            shutil.move(src, dest)
-            logging.info(f'Move {src} -> {dest}')
-            moved.append(dest)
-        except Exception:
-            logging.exception(f'Impossible de déplacer {src} vers {COMPOSITE_DIR}')
-    return moved
+
 
 def generation_loop():
     while True:
@@ -163,7 +155,7 @@ def generation_loop():
             logging.info('Début du cycle de génération')
             src = pick_video_for_processing()
             if not src:
-                logging.info('Aucune vidéo trouvée dans les dossiers de download. J attenderai le prochain cycle.')
+                logging.info('Aucune vidéo trouvée dans ./download. Attente du prochain cycle.')
             else:
                 logging.info(f'Vidéo choisie pour traitement: {src}')
                 ok = prepare_main_input(src)
@@ -174,18 +166,16 @@ def generation_loop():
             logging.exception('Erreur inattendue dans generation_loop')
         time.sleep(GENERATE_INTERVAL)
 
+
 def post_video(final_mp4, poll=True, extra_args=None, timeout=30*60):
-    """
-    Lance : python -X utf8 -u post_tiktok_inbox.py --video <final_mp4> [--poll] [extra_args...]
-    Stream les logs en temps réel. Retourne True si RC==0.
-    """
-    final_mp4 = str(Path(final_mp4))  # tolère Path/str
+    """Lance post_tiktok_inbox.py en streaming console + fichier log."""
+    final_mp4 = str(Path(final_mp4))
     script = os.path.join(BASE_DIR, "post_tiktok_inbox.py")
 
     cmd = [
         sys.executable,
-        "-X", "utf8",   # force UTF-8 (Windows-safe pour emojis)
-        "-u",           # unbuffered I/O
+        "-X", "utf8",
+        "-u",
         script,
         "--video", final_mp4,
     ]
@@ -247,6 +237,7 @@ def post_video(final_mp4, poll=True, extra_args=None, timeout=30*60):
         logging.exception("Erreur lors de l’exécution de post_tiktok_inbox.py")
         return False
 
+
 def posting_loop():
     while True:
         try:
@@ -254,7 +245,7 @@ def posting_loop():
             vids = sorted(glob.glob(os.path.join(COMPOSITE_DIR, '*')), key=os.path.getmtime)
             vids = [v for v in vids if os.path.isfile(v) and v.lower().endswith(VIDEO_EXTS)]
             if not vids:
-                logging.info('Aucune vidéo à poster actuellement. je retenterai dans 10 minutes.')
+                logging.info('Aucune vidéo à poster actuellement. Retente dans 10 min.')
                 time.sleep(600)
                 continue
 
@@ -273,13 +264,16 @@ def posting_loop():
                 except Exception:
                     logging.exception('Erreur lors du déplacement de la vidéo postée')
             else:
-                logging.warning('La tentative de post a échoué. Reessaiera au prochain cycle.')
+                logging.warning('La tentative de post a échoué. Retente au prochain cycle.')
             logging.info(f'Fin du cycle de publication. Pause {POST_INTERVAL} secondes')
         except Exception:
             logging.exception('Erreur inattendue dans posting_loop')
         time.sleep(POST_INTERVAL)
 
 
+# ==============================
+# Main
+# ==============================
 if __name__ == '__main__':
     ensure_dirs()
     t1 = threading.Thread(target=generation_loop, daemon=True)
@@ -291,4 +285,4 @@ if __name__ == '__main__':
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        logging.info('Interruption par l utilisateur, arrêt du scheduler.')
+        logging.info('Interruption par utilisateur, arrêt du scheduler.')
