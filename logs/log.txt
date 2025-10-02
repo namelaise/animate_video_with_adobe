@@ -1,624 +1,90 @@
-[2025-09-20 12:36:42,493] INFO: main.py: ✅ Terminé 69 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 69.mp4 (⏱ 66.24s)
-[2025-09-20 12:36:50,511] INFO: main.py: ✅ Terminé 70 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 70.mp4 (⏱ 63.65s)
-[2025-09-20 12:36:52,792] INFO: main.py: ✅ Toutes les vidéos animées ont été générées.
-[2025-09-20 12:36:52,793] INFO: main.py: [2025-09-20 12:36:52,792] INFO: ✅ Fin étape: 6) Génération vidéos segments (Adobe) (⏱ 1360.087s)
-[2025-09-20 12:36:52,793] INFO: main.py: 
-[2025-09-20 12:36:52,793] INFO: main.py: 
-[2025-09-20 12:36:52,793] INFO: main.py: [2025-09-20 12:36:52,792] INFO: 🚀 Début étape: 7) Assemblage final (durées = transcript)
-[2025-09-20 12:36:59,857] INFO: main.py: ℹ️ Ajustement dernier segment de 5.480s → 6.998s (delta total +1.518s) pour caler vidéo=178.168s sur audio.
-[2025-09-20 12:36:59,857] INFO: main.py: === Plan de coupe (TAIL + boucles, durées EXACTES) ===
-[2025-09-20 12:36:59,857] INFO: main.py: - [0] homme 1 - homme - 1.mp4 | Lclip=00:00:00.667 | cible=00:00:01.300 → tail 00:00:00.667 + loop x2
-[2025-09-20 12:36:59,858] INFO: main.py: - [1] Mr Martin - homme - 2.mp4 | Lclip=00:00:01.792 | cible=00:00:01.600 → tail 00:00:01.600 + loop x1
-[2025-09-20 12:36:59,858] INFO: main.py: - [2] homme 1 - homme - 3.mp4 | Lclip=00:00:01.333 | cible=00:00:01.120 → tail 00:00:01.120 + loop x1
-[2025-09-20 12:36:59,858] INFO: main.py: - [3] Mr Martin - homme - 4.mp4 | Lclip=00:00:05.083 | cible=00:00:04.900 → tail 00:00:04.900 + loop x1
-[2025-09-20 12:36:59,859] INFO: main.py: - [4] homme 1 - homme - 5.mp4 | Lclip=00:00:00.583 | cible=00:00:00.400 → tail 00:00:00.400 + loop x1
-[2025-09-20 12:36:59,859] INFO: main.py: - [5] Mr Martin - homme - 6.mp4 | Lclip=00:00:01.167 | cible=00:00:00.960 → tail 00:00:00.960 + loop x1
-[2025-09-20 12:36:59,859] INFO: main.py: - [6] homme 1 - homme - 7.mp4 | Lclip=00:00:02.917 | cible=00:00:02.740 → tail 00:00:02.740 + loop x1
-[2025-09-20 12:36:59,859] INFO: main.py: - [7] Mr Martin - homme - 8.mp4 | Lclip=00:00:03.417 | cible=00:00:03.240 → tail 00:00:03.240 + loop x1
-[2025-09-20 12:36:59,859] INFO: main.py: - [8] homme 1 - homme - 9.mp4 | Lclip=00:00:03.667 | cible=00:00:03.480 → tail 00:00:03.480 + loop x1
-[2025-09-20 12:36:59,859] INFO: main.py: - [9] Mr Martin - homme - 10.mp4 | Lclip=00:00:03.875 | cible=00:00:03.670 → tail 00:00:03.670 + loop x1
-[2025-09-20 12:36:59,860] INFO: main.py: - [10] homme 1 - homme - 11.mp4 | Lclip=00:00:01.333 | cible=00:00:01.130 → tail 00:00:01.130 + loop x1
-[2025-09-20 12:36:59,860] INFO: main.py: - [11] Mr Martin - homme - 12.mp4 | Lclip=00:00:03.458 | cible=00:00:03.260 → tail 00:00:03.260 + loop x1
-[2025-09-20 12:36:59,860] INFO: main.py: - [12] homme 1 - homme - 13.mp4 | Lclip=00:00:03.125 | cible=00:00:02.950 → tail 00:00:02.950 + loop x1
-[2025-09-20 12:36:59,860] INFO: main.py: - [13] Mr Martin - homme - 14.mp4 | Lclip=00:00:03.625 | cible=00:00:03.450 → tail 00:00:03.450 + loop x1
-[2025-09-20 12:36:59,860] INFO: main.py: - [14] homme 1 - homme - 15.mp4 | Lclip=00:00:04.417 | cible=00:00:04.210 → tail 00:00:04.210 + loop x1
-[2025-09-20 12:36:59,860] INFO: main.py: - [15] Mr Martin - homme - 16.mp4 | Lclip=00:00:04.458 | cible=00:00:04.290 → tail 00:00:04.290 + loop x1
-[2025-09-20 12:36:59,861] INFO: main.py: - [16] homme 1 - homme - 17.mp4 | Lclip=00:00:04.292 | cible=00:00:04.110 → tail 00:00:04.110 + loop x1
-[2025-09-20 12:36:59,861] INFO: main.py: - [17] Mr Martin - homme - 18.mp4 | Lclip=00:00:02.708 | cible=00:00:02.510 → tail 00:00:02.510 + loop x1
-[2025-09-20 12:36:59,861] INFO: main.py: - [18] homme 1 - homme - 19.mp4 | Lclip=00:00:01.167 | cible=00:00:00.980 → tail 00:00:00.980 + loop x1
-[2025-09-20 12:36:59,861] INFO: main.py: - [19] Mr Martin - homme - 20.mp4 | Lclip=00:00:02.583 | cible=00:00:02.400 → tail 00:00:02.400 + loop x1
-[2025-09-20 12:36:59,861] INFO: main.py: - [20] homme 1 - homme - 21.mp4 | Lclip=00:00:04.792 | cible=00:00:04.590 → tail 00:00:04.590 + loop x1
-[2025-09-20 12:36:59,861] INFO: main.py: - [21] Mr Martin - homme - 22.mp4 | Lclip=00:00:03.042 | cible=00:00:02.850 → tail 00:00:02.850 + loop x1
-[2025-09-20 12:36:59,861] INFO: main.py: - [22] homme 1 - homme - 23.mp4 | Lclip=00:00:04.708 | cible=00:00:04.520 → tail 00:00:04.520 + loop x1
-[2025-09-20 12:36:59,862] INFO: main.py: - [23] Mr Martin - homme - 24.mp4 | Lclip=00:00:01.125 | cible=00:00:00.940 → tail 00:00:00.940 + loop x1
-[2025-09-20 12:36:59,862] INFO: main.py: - [24] homme 1 - homme - 25.mp4 | Lclip=00:00:00.375 | cible=00:00:00.200 → tail 00:00:00.200 + loop x1
-[2025-09-20 12:36:59,862] INFO: main.py: - [25] Mr Martin - homme - 26.mp4 | Lclip=00:00:02.250 | cible=00:00:02.060 → tail 00:00:02.060 + loop x1
-[2025-09-20 12:36:59,862] INFO: main.py: - [26] homme 1 - homme - 27.mp4 | Lclip=00:00:01.750 | cible=00:00:01.560 → tail 00:00:01.560 + loop x1
-[2025-09-20 12:36:59,862] INFO: main.py: - [27] Mr Martin - homme - 28.mp4 | Lclip=00:00:01.542 | cible=00:00:01.320 → tail 00:00:01.320 + loop x1
-[2025-09-20 12:36:59,862] INFO: main.py: - [28] homme 1 - homme - 29.mp4 | Lclip=00:00:03.292 | cible=00:00:03.060 → tail 00:00:03.060 + loop x1
-[2025-09-20 12:36:59,863] INFO: main.py: - [29] Mr Martin - homme - 30.mp4 | Lclip=00:00:02.625 | cible=00:00:02.440 → tail 00:00:02.440 + loop x1
-[2025-09-20 12:36:59,863] INFO: main.py: - [30] homme 1 - homme - 31.mp4 | Lclip=00:00:02.375 | cible=00:00:02.160 → tail 00:00:02.160 + loop x1
-[2025-09-20 12:36:59,863] INFO: main.py: - [31] Mr Martin - homme - 32.mp4 | Lclip=00:00:02.625 | cible=00:00:02.440 → tail 00:00:02.440 + loop x1
-[2025-09-20 12:36:59,863] INFO: main.py: - [32] homme 1 - homme - 33.mp4 | Lclip=00:00:02.792 | cible=00:00:02.600 → tail 00:00:02.600 + loop x1
-[2025-09-20 12:36:59,863] INFO: main.py: - [33] Mr Martin - homme - 34.mp4 | Lclip=00:00:03.667 | cible=00:00:03.480 → tail 00:00:03.480 + loop x1
-[2025-09-20 12:36:59,863] INFO: main.py: - [34] homme 1 - homme - 35.mp4 | Lclip=00:00:02.125 | cible=00:00:01.940 → tail 00:00:01.940 + loop x1
-[2025-09-20 12:36:59,864] INFO: main.py: - [35] Mr Martin - homme - 36.mp4 | Lclip=00:00:03.000 | cible=00:00:02.820 → tail 00:00:02.820 + loop x1
-[2025-09-20 12:36:59,864] INFO: main.py: - [36] homme 1 - homme - 37.mp4 | Lclip=00:00:02.333 | cible=00:00:02.140 → tail 00:00:02.140 + loop x1
-[2025-09-20 12:36:59,864] INFO: main.py: - [37] Mr Martin - homme - 38.mp4 | Lclip=00:00:02.042 | cible=00:00:01.860 → tail 00:00:01.860 + loop x1
-[2025-09-20 12:36:59,864] INFO: main.py: - [38] homme 1 - homme - 39.mp4 | Lclip=00:00:01.292 | cible=00:00:01.100 → tail 00:00:01.100 + loop x1
-[2025-09-20 12:36:59,864] INFO: main.py: - [39] Mr Martin - homme - 40.mp4 | Lclip=00:00:02.292 | cible=00:00:02.100 → tail 00:00:02.100 + loop x1
-[2025-09-20 12:36:59,864] INFO: main.py: - [40] homme 1 - homme - 41.mp4 | Lclip=00:00:01.250 | cible=00:00:01.040 → tail 00:00:01.040 + loop x1
-[2025-09-20 12:36:59,865] INFO: main.py: - [41] Mr Martin - homme - 42.mp4 | Lclip=00:00:00.833 | cible=00:00:00.620 → tail 00:00:00.620 + loop x1
-[2025-09-20 12:36:59,865] INFO: main.py: - [42] homme 1 - homme - 43.mp4 | Lclip=00:00:08.042 | cible=00:00:09.100 → tail 00:00:08.042 + loop x2
-[2025-09-20 12:36:59,865] INFO: main.py: - [43] Mr Martin - homme - 44.mp4 | Lclip=00:00:06.875 | cible=00:00:06.690 → tail 00:00:06.690 + loop x1
-[2025-09-20 12:36:59,865] INFO: main.py: - [44] homme 1 - homme - 45.mp4 | Lclip=00:00:02.458 | cible=00:00:02.260 → tail 00:00:02.260 + loop x1
-[2025-09-20 12:36:59,865] INFO: main.py: - [45] Mr Martin - homme - 46.mp4 | Lclip=00:00:12.250 | cible=00:00:12.050 → tail 00:00:12.050 + loop x1
-[2025-09-20 12:36:59,865] INFO: main.py: - [46] homme 1 - homme - 47.mp4 | Lclip=00:00:01.333 | cible=00:00:01.100 → tail 00:00:01.100 + loop x1
-[2025-09-20 12:36:59,865] INFO: main.py: - [47] Mr Martin - homme - 48.mp4 | Lclip=00:00:01.583 | cible=00:00:01.380 → tail 00:00:01.380 + loop x1
-[2025-09-20 12:36:59,865] INFO: main.py: - [48] homme 1 - homme - 49.mp4 | Lclip=00:00:01.042 | cible=00:00:00.860 → tail 00:00:00.860 + loop x1
-[2025-09-20 12:36:59,866] INFO: main.py: - [49] Mr Martin - homme - 50.mp4 | Lclip=00:00:00.958 | cible=00:00:00.760 → tail 00:00:00.760 + loop x1
-[2025-09-20 12:36:59,866] INFO: main.py: - [50] homme 1 - homme - 51.mp4 | Lclip=00:00:01.167 | cible=00:00:00.960 → tail 00:00:00.960 + loop x1
-[2025-09-20 12:36:59,866] INFO: main.py: - [51] Mr Martin - homme - 52.mp4 | Lclip=00:00:02.667 | cible=00:00:02.480 → tail 00:00:02.480 + loop x1
-[2025-09-20 12:36:59,866] INFO: main.py: - [52] homme 1 - homme - 53.mp4 | Lclip=00:00:00.958 | cible=00:00:00.740 → tail 00:00:00.740 + loop x1
-[2025-09-20 12:36:59,866] INFO: main.py: - [53] Mr Martin - homme - 54.mp4 | Lclip=00:00:00.917 | cible=00:00:00.680 → tail 00:00:00.680 + loop x1
-[2025-09-20 12:36:59,866] INFO: main.py: - [54] homme 1 - homme - 55.mp4 | Lclip=00:00:01.125 | cible=00:00:00.890 → tail 00:00:00.890 + loop x1
-[2025-09-20 12:36:59,866] INFO: main.py: - [55] Mr Martin - homme - 56.mp4 | Lclip=00:00:02.583 | cible=00:00:02.390 → tail 00:00:02.390 + loop x1
-[2025-09-20 12:36:59,866] INFO: main.py: - [56] homme 1 - homme - 57.mp4 | Lclip=00:00:02.042 | cible=00:00:01.860 → tail 00:00:01.860 + loop x1
-[2025-09-20 12:36:59,867] INFO: main.py: - [57] Mr Martin - homme - 58.mp4 | Lclip=00:00:04.250 | cible=00:00:04.040 → tail 00:00:04.040 + loop x1
-[2025-09-20 12:36:59,867] INFO: main.py: - [58] homme 1 - homme - 59.mp4 | Lclip=00:00:01.167 | cible=00:00:00.980 → tail 00:00:00.980 + loop x1
-[2025-09-20 12:36:59,867] INFO: main.py: - [59] Mr Martin - homme - 60.mp4 | Lclip=00:00:02.042 | cible=00:00:01.840 → tail 00:00:01.840 + loop x1
-[2025-09-20 12:36:59,867] INFO: main.py: - [60] homme 1 - homme - 61.mp4 | Lclip=00:00:01.917 | cible=00:00:01.720 → tail 00:00:01.720 + loop x1
-[2025-09-20 12:36:59,867] INFO: main.py: - [61] Mr Martin - homme - 62.mp4 | Lclip=00:00:03.417 | cible=00:00:03.240 → tail 00:00:03.240 + loop x1
-[2025-09-20 12:36:59,867] INFO: main.py: - [62] homme 1 - homme - 63.mp4 | Lclip=00:00:02.000 | cible=00:00:01.800 → tail 00:00:01.800 + loop x1
-[2025-09-20 12:36:59,867] INFO: main.py: - [63] Mr Martin - homme - 64.mp4 | Lclip=00:00:02.125 | cible=00:00:01.940 → tail 00:00:01.940 + loop x1
-[2025-09-20 12:36:59,868] INFO: main.py: - [64] homme 1 - homme - 65.mp4 | Lclip=00:00:01.542 | cible=00:00:01.320 → tail 00:00:01.320 + loop x1
-[2025-09-20 12:36:59,868] INFO: main.py: - [65] Mr Martin - homme - 66.mp4 | Lclip=00:00:03.500 | cible=00:00:03.470 → tail 00:00:03.470 + loop x1
-[2025-09-20 12:36:59,868] INFO: main.py: - [66] homme 1 - homme - 67.mp4 | Lclip=00:00:03.333 | cible=00:00:03.140 → tail 00:00:03.140 + loop x1
-[2025-09-20 12:36:59,868] INFO: main.py: - [67] Mr Martin - homme - 68.mp4 | Lclip=00:00:01.250 | cible=00:00:01.020 → tail 00:00:01.020 + loop x1
-[2025-09-20 12:36:59,868] INFO: main.py: - [68] homme 1 - homme - 69.mp4 | Lclip=00:00:02.125 | cible=00:00:01.920 → tail 00:00:01.920 + loop x1
-[2025-09-20 12:36:59,868] INFO: main.py: - [69] Mr Martin - homme - 70.mp4 | Lclip=00:00:05.667 | cible=00:00:06.998 → tail 00:00:05.667 + loop x2
-[2025-09-20 12:36:59,868] INFO: main.py: 
-[2025-09-20 12:36:59,868] INFO: main.py: ▶️  Étape A: build vidéo (boucles, durées exactes)…
-[2025-09-20 12:41:04,750] INFO: main.py: 
-[2025-09-20 12:41:04,920] INFO: main.py: ▶️  Étape B: mux vidéo + full audio…
-[2025-09-20 12:41:10,812] INFO: main.py: 
-[2025-09-20 12:41:10,843] INFO: main.py: ⏱️  Durée vidéo finale : 00:02:58.168 (178.168 s)
-[2025-09-20 12:41:10,843] INFO: main.py: 🔊  Durée audio full   : 00:02:58.168 (178.168 s)
-[2025-09-20 12:41:10,875] INFO: main.py: 🎯  Somme cibles (après ajustement dernier) : 00:02:58.168 (178.168 s)
-[2025-09-20 12:41:10,939] INFO: main.py: Δ   (vidéo - audio)    : -0.000 s (attendu ≈ 0)
-[2025-09-20 12:41:11,068] INFO: main.py: [2025-09-20 12:41:10,971] INFO: ✅ Fin étape: 7) Assemblage final (durées = transcript) (⏱ 258.178s)
-[2025-09-20 12:41:11,068] INFO: main.py: 
-[2025-09-20 12:41:11,068] INFO: main.py: 
-[2025-09-20 12:41:11,083] INFO: main.py: [2025-09-20 12:41:10,971] INFO: 🚀 Début étape: 8) Key & Overlay + Upload TikTok
-[2025-09-20 12:41:11,083] INFO: main.py: [2025-09-20 12:41:10,971] INFO: 🎬 Key & Overlay (fond vert → background)…
-[2025-09-20 12:42:33,365] INFO: main.py: [2025-09-20 12:42:33,365] INFO: 📤 Upload TikTok OK (1er essai)
-[2025-09-20 12:42:33,709] INFO: main.py: [2025-09-20 12:42:33,365] INFO: ✅ Fin étape: 8) Key & Overlay + Upload TikTok (⏱ 82.404s)
-[2025-09-20 12:42:33,709] INFO: main.py: 
-[2025-09-20 12:42:33,709] INFO: main.py: 
-[2025-09-20 12:42:33,709] INFO: main.py: [2025-09-20 12:42:33,365] INFO: 🚀 Début étape: 9) Nettoyage des outputs
-[2025-09-20 12:42:35,504] INFO: main.py: 📦 Vidéo archivée : Download.mp4
-[2025-09-20 12:42:35,504] INFO: main.py: 📦 Fichier supprimé : audio_full.mp3
-[2025-09-20 12:42:35,504] INFO: main.py: 📦 Fichier supprimé : prompt.txt
-[2025-09-20 12:42:35,504] INFO: main.py: 📦 Fichier supprimé : full_background.png
-[2025-09-20 12:42:35,504] INFO: main.py: 📦 Fichier supprimé : left_0.png
-[2025-09-20 12:42:35,504] INFO: main.py: 📦 Fichier supprimé : right_0.png
-[2025-09-20 12:42:35,605] INFO: main.py: 📦 Fichier supprimé : transcription_full.txt
-[2025-09-20 12:42:35,730] INFO: main.py: 📦 Fichier supprimé : transcription_segments_intervenants.txt
-[2025-09-20 12:42:35,730] INFO: main.py: 📦 Fichier supprimé : transcription_segments.txt
-[2025-09-20 12:42:35,730] INFO: main.py: 📦 Fichier supprimé : diarization_segments.json
-[2025-09-20 12:42:35,730] INFO: main.py: 📦 Fichier supprimé : speakers.json
-[2025-09-20 12:42:35,730] INFO: main.py: ✅ Tous les fichiers ont été supprimés 
-[2025-09-20 12:42:35,730] INFO: main.py: [2025-09-20 12:42:35,605] INFO: ✅ Fin étape: 9) Nettoyage des outputs (⏱ 2.235s)
-[2025-09-20 12:42:35,730] INFO: main.py: 
-[2025-09-20 12:42:35,730] INFO: main.py: 
-[2025-09-20 12:42:35,730] INFO: main.py: [2025-09-20 12:42:35,605] INFO: 🎉 Pipeline COMPLET terminé en 2602.654s
-[2025-09-20 12:42:35,730] INFO: main.py: 
-[2025-09-20 12:42:35,730] INFO: main.py: ✅ Traitement terminé.
-[2025-09-20 12:42:37,153] INFO: main.py terminé avec code 0
-[2025-09-20 12:42:37,153] INFO: Fin du cycle de génération. Pause 10 secondes
-[2025-09-20 12:42:47,158] INFO: Début du cycle de génération
-[2025-09-20 12:42:47,158] INFO: Vidéo choisie pour traitement: C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\download\Download (1).mp4
-[2025-09-20 12:42:47,234] INFO: Copié C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\download\Download (1).mp4 -> C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\Download.mp4
-[2025-09-20 12:42:47,234] INFO: Lancement de main.py avec C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\venv\Scripts\python.exe
-[2025-09-20 12:42:50,785] INFO: main.py: [2025-09-20 12:42:50,785] INFO: 📦 Traitement initial démarré…
-[2025-09-20 12:42:50,785] INFO: main.py: [2025-09-20 12:42:50,785] INFO: 🚀 Début étape: 1) Extraction audio depuis RAW_VIDEO
-[2025-09-20 12:42:53,011] INFO: main.py: ✅ Audio extrait : C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\audio\audio_full.mp3
-[2025-09-20 12:42:53,011] INFO: main.py: [2025-09-20 12:42:53,011] INFO: ✅ Fin étape: 1) Extraction audio depuis RAW_VIDEO (⏱ 2.228s)
-[2025-09-20 12:42:53,011] INFO: main.py: 
-[2025-09-20 12:42:53,011] INFO: main.py: 
-[2025-09-20 12:42:53,011] INFO: main.py: [2025-09-20 12:42:53,011] INFO: 🚀 Début étape: 2) Transcription + diarisation
-[2025-09-20 12:42:53,069] INFO: main.py: ℹ️ Durée audio (ffprobe): 00:03:27.007 (207.007s)
-[2025-09-20 12:42:55,728] INFO: main.py: [2025-09-20 12:42:55,728] INFO: HTTP Request: POST https://api.assemblyai.com/v2/upload "HTTP/1.1 200 OK"
-[2025-09-20 12:42:55,968] INFO: main.py: [2025-09-20 12:42:55,968] INFO: HTTP Request: POST https://api.assemblyai.com/v2/transcript "HTTP/1.1 200 OK"
-[2025-09-20 12:42:56,153] INFO: main.py: [2025-09-20 12:42:56,153] INFO: HTTP Request: GET https://api.assemblyai.com/v2/transcript/c131e28d-2839-4965-ba35-a08e55fb6aa1 "HTTP/1.1 200 OK"
-[2025-09-20 12:42:59,338] INFO: main.py: [2025-09-20 12:42:59,338] INFO: HTTP Request: GET https://api.assemblyai.com/v2/transcript/c131e28d-2839-4965-ba35-a08e55fb6aa1 "HTTP/1.1 200 OK"
-[2025-09-20 12:43:02,530] INFO: main.py: [2025-09-20 12:43:02,530] INFO: HTTP Request: GET https://api.assemblyai.com/v2/transcript/c131e28d-2839-4965-ba35-a08e55fb6aa1 "HTTP/1.1 200 OK"
-[2025-09-20 12:43:05,746] INFO: main.py: [2025-09-20 12:43:05,746] INFO: HTTP Request: GET https://api.assemblyai.com/v2/transcript/c131e28d-2839-4965-ba35-a08e55fb6aa1 "HTTP/1.1 200 OK"
-[2025-09-20 12:43:09,035] INFO: main.py: [2025-09-20 12:43:09,035] INFO: HTTP Request: GET https://api.assemblyai.com/v2/transcript/c131e28d-2839-4965-ba35-a08e55fb6aa1 "HTTP/1.1 200 OK"
-[2025-09-20 12:43:09,585] INFO: main.py: ℹ️ AAI: status=completed, texte=5145 chars
-[2025-09-20 12:43:09,585] INFO: main.py: ⚠️ Diarisation s'arrête avant la fin: last_end=00:03:26.037 ; fin audio=00:03:27.007 ; gap=0.970s
-[2025-09-20 12:43:09,601] INFO: main.py: ✅ Fichiers générés :
-[2025-09-20 12:43:09,601] INFO: main.py:  - C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\transcripts\transcription_full.txt
-[2025-09-20 12:43:09,601] INFO: main.py:  - C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\transcripts\diarization_segments.json
-[2025-09-20 12:43:09,601] INFO: main.py:  - C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\transcripts\transcription_segments.txt
-[2025-09-20 12:43:09,604] INFO: main.py:  - C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\transcripts\transcription_segments_with_blanks.txt
-[2025-09-20 12:43:09,604] INFO: main.py:  - C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\transcripts\blanks.json
-[2025-09-20 12:43:09,604] INFO: main.py:  - C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\transcripts\speakers.json
-[2025-09-20 12:43:09,604] INFO: main.py: ⏱️ Couverture diarisation: last_end=00:03:27.007 ; fin audio=00:03:27.007 ; Δ=+0.000s
-[2025-09-20 12:43:09,604] INFO: main.py: [2025-09-20 12:43:09,601] INFO: ✅ Fin étape: 2) Transcription + diarisation (⏱ 16.589s)
-[2025-09-20 12:43:09,604] INFO: main.py: 
-[2025-09-20 12:43:09,604] INFO: main.py: 
-[2025-09-20 12:43:09,604] INFO: main.py: [2025-09-20 12:43:09,601] INFO: 🚀 Début étape: 3) Vérification + réécriture intervenants
-[2025-09-20 12:43:09,612] INFO: main.py: 
-[2025-09-20 12:43:09,615] INFO: main.py: --- Aperçu de la transcription (début) ---
-[2025-09-20 12:43:09,615] INFO: main.py: [0.62 → 1.28] SPKA : Bonjour.
-[2025-09-20 12:43:09,616] INFO: main.py: [1.28 → 2.70] SPKB : Bonjour monsieur, c'est bien la boulangerie ?
-[2025-09-20 12:43:09,616] INFO: main.py: [2.70 → 3.22] SPKA : Oui.
-[2025-09-20 12:43:09,616] INFO: main.py: [3.22 → 5.18] SPKB : Monsieur Martin, société Martin Télécom ?
-[2025-09-20 12:43:09,616] INFO: main.py: [5.18 → 5.68] SPKA : Oui.
-[2025-09-20 12:43:09,616] INFO: main.py: [5.68 → 8.66] SPKB : Je vous ai inscrit sur notre liste pour le démarchage téléphoniste.
-[2025-09-20 12:43:09,616] INFO: main.py: [8.66 → 13.14] SPKA : Et pour quelle raison vous m'avez inscrit ? Je n'ai rien demandé, moi. Déjà qu'on en reçoit au moins 4-5 par jour.
-[2025-09-20 12:43:09,616] INFO: main.py: [13.14 → 15.42] SPKB : Ah oui, mais maintenant vous serez plutôt entre 40 et 50.
-[2025-09-20 12:43:09,616] INFO: main.py: [15.42 → 15.96] SPKA : Par jour ?
-[2025-09-20 12:43:09,616] INFO: main.py: [15.96 → 16.36] SPKB : Bah oui.
-[2025-09-20 12:43:09,616] INFO: main.py: [16.36 → 19.58] SPKA : Mais vous vous rendez compte ? C'est énorme. Je vous garantis, je ne suis pas d'accord.
-[2025-09-20 12:43:09,616] INFO: main.py: [19.58 → 21.38] SPKB : Ah oui, mais ça fallait me le dire avant que je vous inscrive.
-[2025-09-20 12:43:09,616] INFO: main.py: [21.38 → 30.42] SPKA : Non mais comment vous voyez que je devine, moi ? Ah oui, juste, allô ?
-[2025-09-20 12:43:09,616] INFO: main.py: [30.42 → 34.78] SPKB : Oui, tant que j'y pense, à la fin de l'appel, n'oubliez pas de mettre une petite note de satisfaction.
-[2025-09-20 12:43:09,616] INFO: main.py: [34.78 → 36.32] SPKA : Moi, mettre une note de satisfaction ?
-[2025-09-20 12:43:09,616] INFO: main.py: [36.32 → 37.40] SPKB : Voilà, entre 0 et 9.
-[2025-09-20 12:43:09,619] INFO: main.py: [37.40 → 37.94] SPKA : Vous rigolez ?
-[2025-09-20 12:43:09,619] INFO: main.py: [37.94 → 38.22] SPKB : Bien sûr !
-[2025-09-20 12:43:09,619] INFO: main.py: [39.83 → 40.81] SPKC : Oui, vous êtes qui vous ?
-[2025-09-20 12:43:09,619] INFO: main.py: [40.81 → 45.13] SPKB : Bonjour madame Soleil, alors c'est ce que je disais, Martin Télécom, je vous ai mis sur notre liste de démarchage.
-[2025-09-20 12:43:09,619] INFO: main.py: [45.13 → 49.43] SPKC : Non, mais moi j'ai rien demandé, moi j'en veux pas ça, je me ferais malin plaisir de les envoyer chier, je vou
-[2025-09-20 12:43:09,619] INFO: main.py: --- Fin de l’aperçu ---
-[2025-09-20 12:43:09,619] INFO: main.py: 
-[2025-09-20 12:43:09,619] INFO: main.py: ✅ Le contenu vous semble-t-il correct ?
-[2025-09-20 12:43:09,619] INFO: main.py: Appuie sur [y] pour continuer, [n] pour arrêter, ou attendre 5 minutes pour continuer automatiquement.
-[2025-09-20 12:43:39,879] INFO: main.py: ⏳ Temps écoulé. Suite du traitement...
-[2025-09-20 12:47:24,664] INFO: main.py: [2025-09-20 12:47:24,664] INFO: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
-[2025-09-20 12:47:24,679] INFO: main.py: ✅ Fichier réécrit enregistré : C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\transcripts\transcription_segments_intervenants.txt
-[2025-09-20 12:47:24,786] INFO: main.py: [2025-09-20 12:47:24,679] INFO: ✅ Fin étape: 3) Vérification + réécriture intervenants (⏱ 255.090s)
-[2025-09-20 12:47:24,786] INFO: main.py: 
-[2025-09-20 12:47:24,786] INFO: main.py: 
-[2025-09-20 12:47:24,786] INFO: main.py: [2025-09-20 12:47:24,679] INFO: 🚀 Début étape: 4) Découpage MP3 par segments réécrits
-[2025-09-20 12:47:28,622] INFO: main.py: ✅ 86 segments exportés dans C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\audio_segments
-[2025-09-20 12:47:28,622] INFO: main.py: 📝 Manifeste: C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\audio_segments\segments_manifest.json
-[2025-09-20 12:47:28,622] INFO: main.py: [2025-09-20 12:47:28,622] INFO: ✅ Fin étape: 4) Découpage MP3 par segments réécrits (⏱ 3.940s)
-[2025-09-20 12:47:28,622] INFO: main.py: 
-[2025-09-20 12:47:28,622] INFO: main.py: 
-[2025-09-20 12:47:28,622] INFO: main.py: [2025-09-20 12:47:28,622] INFO: 🚀 Début étape: 5) Génération image de fond + split 9:16
-[2025-09-20 12:47:28,622] INFO: main.py: 
-[2025-09-20 12:47:28,622] INFO: main.py: --- Aperçu de la transcription (début) ---
-[2025-09-20 12:47:28,622] INFO: main.py: [0.62 → 1.28] SPKA : Bonjour.
-[2025-09-20 12:47:28,622] INFO: main.py: [1.28 → 2.70] SPKB : Bonjour monsieur, c'est bien la boulangerie ?
-[2025-09-20 12:47:28,622] INFO: main.py: [2.70 → 3.22] SPKA : Oui.
-[2025-09-20 12:47:28,622] INFO: main.py: [3.22 → 5.18] SPKB : Monsieur Martin, société Martin Télécom ?
-[2025-09-20 12:47:28,622] INFO: main.py: [5.18 → 5.68] SPKA : Oui.
-[2025-09-20 12:47:28,622] INFO: main.py: [5.68 → 8.66] SPKB : Je vous ai inscrit sur notre liste pour le démarchage téléphoniste.
-[2025-09-20 12:47:28,622] INFO: main.py: [8.66 → 13.14] SPKA : Et pour quelle raison vous m'avez inscrit ? Je n'ai rien demandé, moi. Déjà qu'on en reçoit au moins 4-5 par jour.
-[2025-09-20 12:47:28,622] INFO: main.py: [13.14 → 15.42] SPKB : Ah oui, mais maintenant vous serez plutôt entre 40 et 50.
-[2025-09-20 12:47:28,638] INFO: main.py: [15.42 → 15.96] SPKA : Par jour ?
-[2025-09-20 12:47:28,638] INFO: main.py: [15.96 → 16.36] SPKB : Bah oui.
-[2025-09-20 12:47:28,638] INFO: main.py: [16.36 → 19.58] SPKA : Mais vous vous rendez compte ? C'est énorme. Je vous garantis, je ne suis pas d'accord.
-[2025-09-20 12:47:28,638] INFO: main.py: [19.58 → 21.38] SPKB : Ah oui, mais ça fallait me le dire avant que je vous inscrive.
-[2025-09-20 12:47:28,638] INFO: main.py: [21.38 → 30.42] SPKA : Non mais comment vous voyez que je devine, moi ? Ah oui, juste, allô ?
-[2025-09-20 12:47:28,638] INFO: main.py: [30.42 → 34.78] SPKB : Oui, tant que j'y pense, à la fin de l'appel, n'oubliez pas de mettre une petite note de satisfaction.
-[2025-09-20 12:47:28,638] INFO: main.py: [34.78 → 36.32] SPKA : Moi, mettre une note de satisfaction ?
-[2025-09-20 12:47:28,638] INFO: main.py: [36.32 → 37.40] SPKB : Voilà, entre 0 et 9.
-[2025-09-20 12:47:28,638] INFO: main.py: [37.40 → 37.94] SPKA : Vous rigolez ?
-[2025-09-20 12:47:28,640] INFO: main.py: [37.94 → 38.22] SPKB : Bien sûr !
-[2025-09-20 12:47:28,640] INFO: main.py: [39.83 → 40.81] SPKC : Oui, vous êtes qui vous ?
-[2025-09-20 12:47:28,640] INFO: main.py: [40.81 → 45.13] SPKB : Bonjour madame Soleil, alors c'est ce que je disais, Martin Télécom, je vous ai mis sur notre liste de démarchage.
-[2025-09-20 12:47:28,640] INFO: main.py: [45.13 → 49.43] SPKC : Non, mais moi j'ai rien demandé, moi j'en veux pas ça, je me ferais malin plaisir de les envoyer chier, je vou
-[2025-09-20 12:47:28,640] INFO: main.py: --- Fin de l’aperçu ---
-[2025-09-20 12:47:28,640] INFO: main.py: 
-[2025-09-20 12:47:28,641] INFO: main.py: ✅ Le contenu vous semble-t-il correct ?
-[2025-09-20 12:47:28,641] INFO: main.py: Appuie sur [y] pour continuer, [n] pour arrêter, ou attendre 5 minutes pour continuer automatiquement.
-[2025-09-20 12:47:58,908] INFO: main.py: ⏳ Temps écoulé. Suite du traitement...
-[2025-09-20 12:47:58,908] INFO: main.py: ✅ Prompt image généré (template: 2.txt) → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\images\prompt.txt
-[2025-09-20 12:47:58,908] INFO: main.py: ⏳ Génération de l'image via OpenAI...
-[2025-09-20 12:48:57,930] INFO: main.py: [2025-09-20 12:48:57,930] INFO: HTTP Request: POST https://api.openai.com/v1/images/generations "HTTP/1.1 200 OK"
-[2025-09-20 12:48:58,610] INFO: main.py: ✅ Image générée : C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\images\full_background.png
-[2025-09-20 12:48:58,769] INFO: main.py: ⚠️ Redimension de l’image en 1080x960 pour TikTok.
-[2025-09-20 12:48:58,893] INFO: main.py: ✅ Deux images 9:16 générées (gauche/droite).
-[2025-09-20 12:48:58,893] INFO: main.py: [2025-09-20 12:48:58,893] INFO: ✅ Fin étape: 5) Génération image de fond + split 9:16 (⏱ 90.267s)
-[2025-09-20 12:48:58,893] INFO: main.py: 
-[2025-09-20 12:48:58,893] INFO: main.py: 
-[2025-09-20 12:48:58,893] INFO: main.py: [2025-09-20 12:48:58,893] INFO: 🚀 Début étape: 6) Génération vidéos segments (Adobe)
-[2025-09-20 12:48:58,893] INFO: main.py: ⏳ Lancement de 86 segments (max 4 pages parallèles, 1 seul navigateur)
-[2025-09-20 12:50:13,912] INFO: main.py: ✅ Terminé 4 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 4.mp4 (⏱ 67.59s)
-[2025-09-20 12:50:34,886] INFO: main.py: ✅ Terminé 2 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 2.mp4 (⏱ 88.50s)
-[2025-09-20 12:50:35,049] INFO: main.py: ✅ Terminé 3 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 3.mp4 (⏱ 88.66s)
-[2025-09-20 12:50:37,981] INFO: main.py: ✅ Terminé 1 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 1.mp4 (⏱ 91.63s)
-[2025-09-20 12:51:43,980] INFO: main.py: ✅ Terminé 5 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 5.mp4 (⏱ 89.86s)
-[2025-09-20 12:52:05,187] INFO: main.py: ✅ Terminé 8 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 8.mp4 (⏱ 86.96s)
-[2025-09-20 12:52:05,299] INFO: main.py: ✅ Terminé 6 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 6.mp4 (⏱ 90.08s)
-[2025-09-20 12:52:39,249] INFO: main.py: ✅ Terminé 7 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 7.mp4 (⏱ 123.99s)
-[2025-09-20 12:53:08,549] INFO: main.py: ✅ Terminé 9 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 9.mp4 (⏱ 84.35s)
-[2025-09-20 12:53:29,620] INFO: main.py: ✅ Terminé 10 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 10.mp4 (⏱ 84.02s)
-[2025-09-20 12:53:30,143] INFO: main.py: ✅ Terminé 11 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 11.mp4 (⏱ 84.52s)
-[2025-09-20 12:53:30,805] INFO: main.py: ✅ Terminé 12 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 12.mp4 (⏱ 51.30s)
-[2025-09-20 12:54:33,861] INFO: main.py: ✅ Terminé 16 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 16.mp4 (⏱ 62.86s)
-[2025-09-20 12:54:36,347] INFO: main.py: ✅ Terminé 14 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 14.mp4 (⏱ 66.46s)
-[2025-09-20 12:55:11,240] INFO: main.py: ✅ Terminé 13 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 13.mp4 (⏱ 122.36s)
-[2025-09-20 12:55:21,812] INFO: main.py: ❌ 15 essai 1/3 : Timeout 25000ms exceeded while waiting for event "download"
-[2025-09-20 12:55:21,813] INFO: main.py: =========================== logs ===========================
-[2025-09-20 12:55:21,813] INFO: main.py: waiting for event "download"
-[2025-09-20 12:55:21,813] INFO: main.py: ============================================================
-[2025-09-20 12:55:55,507] INFO: main.py: ✅ Terminé 18 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 18.mp4 (⏱ 78.94s)
-[2025-09-20 12:55:57,221] INFO: main.py: ✅ Terminé 17 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 17.mp4 (⏱ 83.00s)
-[2025-09-20 12:56:29,070] INFO: main.py: ✅ Terminé 19 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 2 - femme - 19.mp4 (⏱ 77.68s)
-[2025-09-20 12:56:52,507] INFO: main.py: ✅ Terminé 20 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 20.mp4 (⏱ 88.59s)
-[2025-09-20 12:57:17,187] INFO: main.py: ✅ Terminé 22 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 22.mp4 (⏱ 79.82s)
-[2025-09-20 12:57:38,853] INFO: main.py: ✅ Terminé 21 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 2 - femme - 21.mp4 (⏱ 102.96s)
-[2025-09-20 12:58:00,707] INFO: main.py: ✅ Terminé 24 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 24.mp4 (⏱ 66.83s)
-[2025-09-20 12:58:00,717] INFO: main.py: ✅ Terminé 23 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 2 - femme - 23.mp4 (⏱ 91.25s)
-[2025-09-20 12:58:35,128] INFO: main.py: ✅ Terminé 25 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 2 - femme - 25.mp4 (⏱ 77.73s)
-[2025-09-20 12:59:46,720] INFO: main.py: ✅ Terminé 27 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 2 - femme - 27.mp4 (⏱ 105.49s)
-[2025-09-20 12:59:50,245] INFO: main.py: ✅ Terminé 26 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 26.mp4 (⏱ 130.97s)
-[2025-09-20 13:00:17,226] INFO: main.py: ✅ Terminé 28 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 28.mp4 (⏱ 135.98s)
-[2025-09-20 13:00:17,638] INFO: main.py: ✅ Terminé 29 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 29.mp4 (⏱ 102.04s)
-[2025-09-20 13:01:20,939] INFO: main.py: ✅ Terminé 31 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 31.mp4 (⏱ 90.48s)
-[2025-09-20 13:01:42,314] INFO: main.py: ✅ Terminé 33 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 33.mp4 (⏱ 81.73s)
-[2025-09-20 13:01:43,044] INFO: main.py: ✅ Terminé 32 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 32.mp4 (⏱ 85.65s)
-[2025-09-20 13:02:16,715] INFO: main.py: ✅ Terminé 30 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 2 - femme - 30.mp4 (⏱ 149.51s)
-[2025-09-20 13:03:15,904] INFO: main.py: ✅ Terminé 36 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 36.mp4 (⏱ 92.71s)
-[2025-09-20 13:03:48,289] INFO: main.py: ✅ Terminé 34 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 34.mp4 (⏱ 146.91s)
-[2025-09-20 13:04:18,825] INFO: main.py: ✅ Terminé 35 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 35.mp4 (⏱ 155.87s)
-[2025-09-20 13:04:38,763] INFO: main.py: ✅ Terminé 37 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 37.mp4 (⏱ 141.54s)
-[2025-09-20 13:04:56,731] INFO: main.py: ✅ Terminé 39 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 39.mp4 (⏱ 68.13s)
-[2025-09-20 13:05:18,629] INFO: main.py: ✅ Terminé 38 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 38.mp4 (⏱ 122.35s)
-[2025-09-20 13:06:18,980] INFO: main.py: ✅ Terminé 40 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 40.mp4 (⏱ 119.86s)
-[2025-09-20 13:06:19,960] INFO: main.py: ✅ Terminé 41 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 41.mp4 (⏱ 100.95s)
-[2025-09-20 13:06:44,052] INFO: main.py: ✅ Terminé 43 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 43.mp4 (⏱ 85.08s)
-[2025-09-20 13:07:01,023] INFO: main.py: ✅ Terminé 42 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 42.mp4 (⏱ 123.97s)
-[2025-09-20 13:07:22,818] INFO: main.py: ✅ Terminé 44 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 44.mp4 (⏱ 63.53s)
-[2025-09-20 13:07:44,851] INFO: main.py: ✅ Terminé 45 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 45.mp4 (⏱ 84.76s)
-[2025-09-20 13:08:05,448] INFO: main.py: ✅ Terminé 46 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 46.mp4 (⏱ 81.05s)
-[2025-09-20 13:08:21,631] INFO: main.py: ✅ Terminé 47 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 47.mp4 (⏱ 80.34s)
-[2025-09-20 13:08:21,703] INFO: main.py: ✅ Terminé 48 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 48.mp4 (⏱ 58.53s)
-[2025-09-20 13:09:02,545] INFO: main.py: ✅ Terminé 49 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 49.mp4 (⏱ 77.52s)
-[2025-09-20 13:09:18,010] INFO: main.py: ✅ Terminé 50 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 50.mp4 (⏱ 71.52s)
-[2025-09-20 13:09:18,078] INFO: main.py: ✅ Terminé 52 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 52.mp4 (⏱ 55.89s)
-[2025-09-20 13:09:42,835] INFO: main.py: ✅ Terminé 51 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 51.mp4 (⏱ 80.68s)
-[2025-09-20 13:10:19,418] INFO: main.py: ✅ Terminé 53 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 53.mp4 (⏱ 76.56s)
-[2025-09-20 13:10:37,815] INFO: main.py: ✅ Terminé 55 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 55.mp4 (⏱ 79.35s)
-[2025-09-20 13:10:38,302] INFO: main.py: ✅ Terminé 56 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 56.mp4 (⏱ 55.17s)
-[2025-09-20 13:10:38,499] INFO: main.py: ✅ Terminé 54 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 54.mp4 (⏱ 80.05s)
-[2025-09-20 13:11:29,313] INFO: main.py: ✅ Terminé 60 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 60.mp4 (⏱ 50.70s)
-[2025-09-20 13:11:45,251] INFO: main.py: ✅ Terminé 58 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 58.mp4 (⏱ 67.07s)
-[2025-09-20 13:11:46,254] INFO: main.py: ✅ Terminé 57 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 57.mp4 (⏱ 86.52s)
-[2025-09-20 13:12:11,162] INFO: main.py: ✅ Terminé 59 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 59.mp4 (⏱ 92.67s)
-[2025-09-20 13:12:47,982] INFO: main.py: ✅ Terminé 63 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 63.mp4 (⏱ 61.61s)
-[2025-09-20 13:12:50,965] INFO: main.py: ✅ Terminé 61 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 61.mp4 (⏱ 81.38s)
-[2025-09-20 13:13:14,492] INFO: main.py: ✅ Terminé 62 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 62.mp4 (⏱ 88.88s)
-[2025-09-20 13:13:16,708] INFO: main.py: ✅ Terminé 64 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 64.mp4 (⏱ 65.20s)
-[2025-09-20 13:13:57,488] INFO: main.py: ✅ Terminé 66 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 66.mp4 (⏱ 66.18s)
-[2025-09-20 13:14:14,285] INFO: main.py: ✅ Terminé 68 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 68.mp4 (⏱ 57.34s)
-[2025-09-20 13:14:15,108] INFO: main.py: ✅ Terminé 65 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 65.mp4 (⏱ 86.82s)
-[2025-09-20 13:14:39,036] INFO: main.py: ✅ Terminé 67 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 67.mp4 (⏱ 83.36s)
-[2025-09-20 13:15:06,225] INFO: main.py: ✅ Terminé 69 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 69.mp4 (⏱ 68.39s)
-[2025-09-20 13:15:24,198] INFO: main.py: ✅ Terminé 71 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 71.mp4 (⏱ 68.97s)
-[2025-09-20 13:15:24,969] INFO: main.py: ✅ Terminé 70 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 70.mp4 (⏱ 70.34s)
-[2025-09-20 13:15:26,987] INFO: main.py: ✅ Terminé 72 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 72.mp4 (⏱ 47.58s)
-[2025-09-20 13:16:19,912] INFO: main.py: ✅ Terminé 74 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 74.mp4 (⏱ 55.49s)
-[2025-09-20 13:16:23,259] INFO: main.py: ✅ Terminé 76 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 76.mp4 (⏱ 56.03s)
-[2025-09-20 13:16:46,245] INFO: main.py: ✅ Terminé 73 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 73.mp4 (⏱ 99.69s)
-[2025-09-20 13:16:46,256] INFO: main.py: ✅ Terminé 75 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 75.mp4 (⏱ 81.14s)
-[2025-09-20 13:17:38,568] INFO: main.py: ✅ Terminé 78 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 78.mp4 (⏱ 75.09s)
-[2025-09-20 13:17:55,472] INFO: main.py: ✅ Terminé 80 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 80.mp4 (⏱ 68.35s)
-[2025-09-20 13:17:56,598] INFO: main.py: ✅ Terminé 77 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 77.mp4 (⏱ 96.29s)
-[2025-09-20 13:17:56,918] INFO: main.py: ✅ Terminé 79 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 79.mp4 (⏱ 69.96s)
-[2025-09-20 13:18:53,780] INFO: main.py: ✅ Terminé 81 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 81.mp4 (⏱ 75.01s)
-[2025-09-20 13:18:56,616] INFO: main.py: ✅ Terminé 82 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 82.mp4 (⏱ 60.78s)
-[2025-09-20 13:18:58,487] INFO: main.py: ✅ Terminé 84 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 84.mp4 (⏱ 61.45s)
-[2025-09-20 13:19:10,091] INFO: main.py: ✅ Terminé 83 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 83.mp4 (⏱ 73.33s)
-[2025-09-20 13:19:56,241] INFO: main.py: ✅ Terminé 86 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 86.mp4 (⏱ 59.47s)
-[2025-09-20 13:20:03,604] INFO: main.py: ✅ Terminé 85 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 85.mp4 (⏱ 69.39s)
-[2025-09-20 13:20:05,733] INFO: main.py: ✅ Terminé 15 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 15.mp4 (⏱ 63.04s)
-[2025-09-20 13:20:07,044] INFO: main.py: ✅ Toutes les vidéos animées ont été générées.
-[2025-09-20 13:20:07,044] INFO: main.py: [2025-09-20 13:20:07,044] INFO: ✅ Fin étape: 6) Génération vidéos segments (Adobe) (⏱ 1868.142s)
-[2025-09-20 13:20:07,045] INFO: main.py: 
-[2025-09-20 13:20:07,045] INFO: main.py: 
-[2025-09-20 13:20:07,045] INFO: main.py: [2025-09-20 13:20:07,044] INFO: 🚀 Début étape: 7) Assemblage final (durées = transcript)
-[2025-09-20 13:20:15,713] INFO: main.py: ℹ️ Ajustement dernier segment de 2.160s → 3.127s (delta total +0.967s) pour caler vidéo=207.007s sur audio.
-[2025-09-20 13:20:15,713] INFO: main.py: === Plan de coupe (TAIL + boucles, durées EXACTES) ===
-[2025-09-20 13:20:15,713] INFO: main.py: - [0] femme 1 - femme - 1.mp4 | Lclip=00:00:00.875 | cible=00:00:01.280 → tail 00:00:00.875 + loop x2
-[2025-09-20 13:20:15,713] INFO: main.py: - [1] Mr Martin - homme - 2.mp4 | Lclip=00:00:01.625 | cible=00:00:01.420 → tail 00:00:01.420 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [2] femme 1 - femme - 3.mp4 | Lclip=00:00:00.708 | cible=00:00:00.520 → tail 00:00:00.520 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [3] Mr Martin - homme - 4.mp4 | Lclip=00:00:02.167 | cible=00:00:01.960 → tail 00:00:01.960 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [4] femme 1 - femme - 5.mp4 | Lclip=00:00:00.708 | cible=00:00:00.500 → tail 00:00:00.500 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [5] Mr Martin - homme - 6.mp4 | Lclip=00:00:03.167 | cible=00:00:02.980 → tail 00:00:02.980 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [6] femme 1 - femme - 7.mp4 | Lclip=00:00:04.667 | cible=00:00:04.480 → tail 00:00:04.480 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [7] Mr Martin - homme - 8.mp4 | Lclip=00:00:02.500 | cible=00:00:02.280 → tail 00:00:02.280 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [8] femme 1 - femme - 9.mp4 | Lclip=00:00:00.708 | cible=00:00:00.540 → tail 00:00:00.540 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [9] Mr Martin - homme - 10.mp4 | Lclip=00:00:00.625 | cible=00:00:00.400 → tail 00:00:00.400 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [10] femme 1 - femme - 11.mp4 | Lclip=00:00:03.417 | cible=00:00:03.220 → tail 00:00:03.220 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [11] Mr Martin - homme - 12.mp4 | Lclip=00:00:02.000 | cible=00:00:01.800 → tail 00:00:01.800 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [12] femme 1 - femme - 13.mp4 | Lclip=00:00:09.250 | cible=00:00:09.040 → tail 00:00:09.040 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [13] Mr Martin - homme - 14.mp4 | Lclip=00:00:04.542 | cible=00:00:04.360 → tail 00:00:04.360 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [14] femme 1 - femme - 15.mp4 | Lclip=00:00:01.750 | cible=00:00:01.540 → tail 00:00:01.540 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [15] Mr Martin - homme - 16.mp4 | Lclip=00:00:01.250 | cible=00:00:01.080 → tail 00:00:01.080 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [16] femme 1 - femme - 17.mp4 | Lclip=00:00:00.750 | cible=00:00:00.540 → tail 00:00:00.540 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [17] Mr Martin - homme - 18.mp4 | Lclip=00:00:00.458 | cible=00:00:00.280 → tail 00:00:00.280 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [18] femme 2 - femme - 19.mp4 | Lclip=00:00:01.167 | cible=00:00:02.590 → tail 00:00:01.167 + loop x3
-[2025-09-20 13:20:15,713] INFO: main.py: - [19] Mr Martin - homme - 20.mp4 | Lclip=00:00:04.500 | cible=00:00:04.320 → tail 00:00:04.320 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [20] femme 2 - femme - 21.mp4 | Lclip=00:00:04.500 | cible=00:00:04.300 → tail 00:00:04.300 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [21] Mr Martin - homme - 22.mp4 | Lclip=00:00:03.500 | cible=00:00:03.300 → tail 00:00:03.300 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [22] femme 2 - femme - 23.mp4 | Lclip=00:00:01.375 | cible=00:00:01.200 → tail 00:00:01.200 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [23] Mr Martin - homme - 24.mp4 | Lclip=00:00:02.875 | cible=00:00:02.820 → tail 00:00:02.820 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [24] femme 2 - femme - 25.mp4 | Lclip=00:00:02.833 | cible=00:00:02.640 → tail 00:00:02.640 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [25] Mr Martin - homme - 26.mp4 | Lclip=00:00:02.167 | cible=00:00:01.960 → tail 00:00:01.960 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [26] femme 2 - femme - 27.mp4 | Lclip=00:00:01.417 | cible=00:00:01.220 → tail 00:00:01.220 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [27] femme 1 - femme - 28.mp4 | Lclip=00:00:00.958 | cible=00:00:00.800 → tail 00:00:00.800 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [28] Mr Martin - homme - 29.mp4 | Lclip=00:00:02.417 | cible=00:00:02.220 → tail 00:00:02.220 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [29] femme 2 - femme - 30.mp4 | Lclip=00:00:00.917 | cible=00:00:00.700 → tail 00:00:00.700 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [30] femme 1 - femme - 31.mp4 | Lclip=00:00:01.250 | cible=00:00:03.210 → tail 00:00:01.250 + loop x3
-[2025-09-20 13:20:15,713] INFO: main.py: - [31] Mr Martin - homme - 32.mp4 | Lclip=00:00:01.375 | cible=00:00:01.180 → tail 00:00:01.180 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [32] femme 1 - femme - 33.mp4 | Lclip=00:00:03.750 | cible=00:00:03.580 → tail 00:00:03.580 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [33] Mr Martin - homme - 34.mp4 | Lclip=00:00:01.750 | cible=00:00:01.560 → tail 00:00:01.560 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [34] femme 1 - femme - 35.mp4 | Lclip=00:00:02.875 | cible=00:00:02.660 → tail 00:00:02.660 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [35] Mr Martin - homme - 36.mp4 | Lclip=00:00:01.833 | cible=00:00:01.660 → tail 00:00:01.660 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [36] femme 1 - femme - 37.mp4 | Lclip=00:00:02.250 | cible=00:00:02.040 → tail 00:00:02.040 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [37] Mr Martin - homme - 38.mp4 | Lclip=00:00:01.542 | cible=00:00:01.340 → tail 00:00:01.340 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [38] femme 1 - femme - 39.mp4 | Lclip=00:00:01.583 | cible=00:00:01.380 → tail 00:00:01.380 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [39] Mr Martin - homme - 40.mp4 | Lclip=00:00:01.500 | cible=00:00:01.280 → tail 00:00:01.280 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [40] femme 1 - femme - 41.mp4 | Lclip=00:00:08.208 | cible=00:00:08.000 → tail 00:00:08.000 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [41] Mr Martin - homme - 42.mp4 | Lclip=00:00:02.292 | cible=00:00:05.420 → tail 00:00:02.292 + loop x3
-[2025-09-20 13:20:15,713] INFO: main.py: - [42] femme 1 - femme - 43.mp4 | Lclip=00:00:03.042 | cible=00:00:02.840 → tail 00:00:02.840 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [43] Mr Martin - homme - 44.mp4 | Lclip=00:00:00.500 | cible=00:00:00.320 → tail 00:00:00.320 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [44] femme 1 - femme - 45.mp4 | Lclip=00:00:00.708 | cible=00:00:00.500 → tail 00:00:00.500 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [45] Mr Martin - homme - 46.mp4 | Lclip=00:00:01.042 | cible=00:00:00.860 → tail 00:00:00.860 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [46] femme 1 - femme - 47.mp4 | Lclip=00:00:01.125 | cible=00:00:00.900 → tail 00:00:00.900 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [47] Mr Martin - homme - 48.mp4 | Lclip=00:00:02.917 | cible=00:00:02.720 → tail 00:00:02.720 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [48] femme 1 - femme - 49.mp4 | Lclip=00:00:04.750 | cible=00:00:04.540 → tail 00:00:04.540 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [49] Mr Martin - homme - 50.mp4 | Lclip=00:00:02.625 | cible=00:00:02.440 → tail 00:00:02.440 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [50] femme 1 - femme - 51.mp4 | Lclip=00:00:06.250 | cible=00:00:06.050 → tail 00:00:06.050 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [51] Mr Martin - homme - 52.mp4 | Lclip=00:00:01.708 | cible=00:00:01.510 → tail 00:00:01.510 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [52] femme 1 - femme - 53.mp4 | Lclip=00:00:04.000 | cible=00:00:03.780 → tail 00:00:03.780 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [53] Mr Martin - homme - 54.mp4 | Lclip=00:00:04.292 | cible=00:00:04.100 → tail 00:00:04.100 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [54] femme 1 - femme - 55.mp4 | Lclip=00:00:03.625 | cible=00:00:03.440 → tail 00:00:03.440 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [55] Mr Martin - homme - 56.mp4 | Lclip=00:00:03.458 | cible=00:00:03.270 → tail 00:00:03.270 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [56] femme 1 - femme - 57.mp4 | Lclip=00:00:04.292 | cible=00:00:04.100 → tail 00:00:04.100 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [57] Mr Martin - homme - 58.mp4 | Lclip=00:00:02.000 | cible=00:00:04.670 → tail 00:00:02.000 + loop x3
-[2025-09-20 13:20:15,713] INFO: main.py: - [58] femme 1 - femme - 59.mp4 | Lclip=00:00:03.875 | cible=00:00:03.680 → tail 00:00:03.680 + loop x1
-[2025-09-20 13:20:15,713] INFO: main.py: - [59] Mr Martin - homme - 60.mp4 | Lclip=00:00:04.042 | cible=00:00:03.880 → tail 00:00:03.880 + loop x1
-[2025-09-20 13:20:15,728] INFO: main.py: - [60] femme 1 - femme - 61.mp4 | Lclip=00:00:04.208 | cible=00:00:03.980 → tail 00:00:03.980 + loop x1
-[2025-09-20 13:20:15,728] INFO: main.py: - [61] Mr Martin - homme - 62.mp4 | Lclip=00:00:01.083 | cible=00:00:02.710 → tail 00:00:01.083 + loop x3
-[2025-09-20 13:20:15,728] INFO: main.py: - [62] femme 1 - femme - 63.mp4 | Lclip=00:00:02.167 | cible=00:00:01.980 → tail 00:00:01.980 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [63] Mr Martin - homme - 64.mp4 | Lclip=00:00:02.375 | cible=00:00:02.180 → tail 00:00:02.180 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [64] femme 1 - femme - 65.mp4 | Lclip=00:00:01.167 | cible=00:00:00.940 → tail 00:00:00.940 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [65] Mr Martin - homme - 66.mp4 | Lclip=00:00:00.833 | cible=00:00:00.640 → tail 00:00:00.640 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [66] femme 1 - femme - 67.mp4 | Lclip=00:00:01.875 | cible=00:00:01.680 → tail 00:00:01.680 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [67] Mr Martin - homme - 68.mp4 | Lclip=00:00:02.375 | cible=00:00:02.180 → tail 00:00:02.180 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [68] femme 1 - femme - 69.mp4 | Lclip=00:00:00.542 | cible=00:00:00.380 → tail 00:00:00.380 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [69] Mr Martin - homme - 70.mp4 | Lclip=00:00:02.750 | cible=00:00:02.540 → tail 00:00:02.540 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [70] femme 1 - femme - 71.mp4 | Lclip=00:00:02.458 | cible=00:00:02.240 → tail 00:00:02.240 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [71] Mr Martin - homme - 72.mp4 | Lclip=00:00:01.958 | cible=00:00:01.760 → tail 00:00:01.760 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [72] femme 1 - femme - 73.mp4 | Lclip=00:00:00.958 | cible=00:00:00.780 → tail 00:00:00.780 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [73] Mr Martin - homme - 74.mp4 | Lclip=00:00:01.458 | cible=00:00:01.240 → tail 00:00:01.240 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [74] femme 1 - femme - 75.mp4 | Lclip=00:00:01.333 | cible=00:00:01.140 → tail 00:00:01.140 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [75] Mr Martin - homme - 76.mp4 | Lclip=00:00:01.750 | cible=00:00:01.540 → tail 00:00:01.540 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [76] femme 1 - femme - 77.mp4 | Lclip=00:00:01.792 | cible=00:00:01.600 → tail 00:00:01.600 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [77] Mr Martin - homme - 78.mp4 | Lclip=00:00:04.250 | cible=00:00:04.070 → tail 00:00:04.070 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [78] femme 1 - femme - 79.mp4 | Lclip=00:00:04.208 | cible=00:00:04.020 → tail 00:00:04.020 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [79] Mr Martin - homme - 80.mp4 | Lclip=00:00:05.500 | cible=00:00:05.300 → tail 00:00:05.300 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [80] femme 1 - femme - 81.mp4 | Lclip=00:00:01.750 | cible=00:00:01.540 → tail 00:00:01.540 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [81] Mr Martin - homme - 82.mp4 | Lclip=00:00:01.083 | cible=00:00:00.880 → tail 00:00:00.880 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [82] femme 1 - femme - 83.mp4 | Lclip=00:00:01.500 | cible=00:00:01.300 → tail 00:00:01.300 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [83] Mr Martin - homme - 84.mp4 | Lclip=00:00:03.792 | cible=00:00:03.620 → tail 00:00:03.620 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [84] femme 1 - femme - 85.mp4 | Lclip=00:00:00.625 | cible=00:00:00.440 → tail 00:00:00.440 + loop x1
-[2025-09-20 13:20:15,729] INFO: main.py: - [85] Mr Martin - homme - 86.mp4 | Lclip=00:00:02.375 | cible=00:00:03.127 → tail 00:00:02.375 + loop x2
-[2025-09-20 13:20:15,729] INFO: main.py: 
-[2025-09-20 13:20:15,729] INFO: main.py: ▶️  Étape A: build vidéo (boucles, durées exactes)…
-[2025-09-20 13:22:30,053] INFO: main.py: 
-[2025-09-20 13:22:30,275] INFO: main.py: ▶️  Étape B: mux vidéo + full audio…
-[2025-09-20 13:22:38,561] INFO: main.py: 
-[2025-09-20 13:22:38,561] INFO: main.py: ⏱️  Durée vidéo finale : 00:03:27.007 (207.007 s)
-[2025-09-20 13:22:38,561] INFO: main.py: 🔊  Durée audio full   : 00:03:27.007 (207.007 s)
-[2025-09-20 13:22:38,722] INFO: main.py: 🎯  Somme cibles (après ajustement dernier) : 00:03:27.007 (207.007 s)
-[2025-09-20 13:22:38,728] INFO: main.py: Δ   (vidéo - audio)    : -0.000 s (attendu ≈ 0)
-[2025-09-20 13:22:42,177] INFO: main.py: [2025-09-20 13:22:41,734] INFO: ✅ Fin étape: 7) Assemblage final (durées = transcript) (⏱ 154.616s)
-[2025-09-20 13:22:42,177] INFO: main.py: 
-[2025-09-20 13:22:42,177] INFO: main.py: 
-[2025-09-20 13:22:42,333] INFO: main.py: [2025-09-20 13:22:42,333] INFO: 🚀 Début étape: 8) Key & Overlay + Upload TikTok
-[2025-09-20 13:22:42,411] INFO: main.py: [2025-09-20 13:22:42,333] INFO: 🎬 Key & Overlay (fond vert → background)…
-[2025-09-20 13:24:22,144] INFO: main.py: [2025-09-20 13:24:22,144] INFO: 📤 Upload TikTok OK (1er essai)
-[2025-09-20 13:24:22,144] INFO: main.py: [2025-09-20 13:24:22,144] INFO: ✅ Fin étape: 8) Key & Overlay + Upload TikTok (⏱ 99.809s)
-[2025-09-20 13:24:22,144] INFO: main.py: 
-[2025-09-20 13:24:22,144] INFO: main.py: 
-[2025-09-20 13:24:22,160] INFO: main.py: [2025-09-20 13:24:22,144] INFO: 🚀 Début étape: 9) Nettoyage des outputs
-[2025-09-20 13:24:22,653] INFO: main.py: 📦 Vidéo archivée : Download.mp4
-[2025-09-20 13:24:22,749] INFO: main.py: ✅ Vidéo archivée dans : C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\archive\Video_3\video_final.mp4
-[2025-09-20 13:24:22,749] INFO: main.py: 📦 Fichier supprimé : audio_full.mp3
-[2025-09-20 13:24:22,750] INFO: main.py: 📦 Fichier supprimé : prompt.txt
-[2025-09-20 13:24:22,751] INFO: main.py: 📦 Fichier supprimé : full_background.png
-[2025-09-20 13:24:22,752] INFO: main.py: 📦 Fichier supprimé : left_0.png
-[2025-09-20 13:24:22,753] INFO: main.py: 📦 Fichier supprimé : right_0.png
-[2025-09-20 13:24:22,801] INFO: main.py: 📦 Fichier supprimé : transcription_full.txt
-[2025-09-20 13:24:22,817] INFO: main.py: 📦 Fichier supprimé : transcription_segments_intervenants.txt
-[2025-09-20 13:24:22,817] INFO: main.py: 📦 Fichier supprimé : transcription_segments.txt
-[2025-09-20 13:24:22,818] INFO: main.py: 📦 Fichier supprimé : diarization_segments.json
-[2025-09-20 13:24:22,818] INFO: main.py: 📦 Fichier supprimé : speakers.json
-[2025-09-20 13:24:22,818] INFO: main.py: ✅ Tous les fichiers ont été supprimés 
-[2025-09-20 13:24:22,852] INFO: main.py: [2025-09-20 13:24:22,818] INFO: ✅ Fin étape: 9) Nettoyage des outputs (⏱ 0.654s)
-[2025-09-20 13:24:22,852] INFO: main.py: 
-[2025-09-20 13:24:22,852] INFO: main.py: 
-[2025-09-20 13:24:22,852] INFO: main.py: [2025-09-20 13:24:22,818] INFO: 🎉 Pipeline COMPLET terminé en 2492.033s
-[2025-09-20 13:24:22,852] INFO: main.py: 
-[2025-09-20 13:24:22,852] INFO: main.py: ✅ Traitement terminé.
-[2025-09-20 13:24:37,361] INFO: main.py terminé avec code 0
-[2025-09-20 13:24:37,361] INFO: Fin du cycle de génération. Pause 10 secondes
-[2025-09-20 13:24:47,373] INFO: Début du cycle de génération
-[2025-09-20 13:24:47,373] INFO: Vidéo choisie pour traitement: C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\download\Download (2).mp4
-[2025-09-20 13:24:47,477] INFO: Copié C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\download\Download (2).mp4 -> C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\Download.mp4
-[2025-09-20 13:24:47,477] INFO: Lancement de main.py avec C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\venv\Scripts\python.exe
-[2025-09-20 13:24:52,353] INFO: main.py: [2025-09-20 13:24:52,353] INFO: 📦 Traitement initial démarré…
-[2025-09-20 13:24:52,399] INFO: main.py: [2025-09-20 13:24:52,353] INFO: 🚀 Début étape: 1) Extraction audio depuis RAW_VIDEO
-[2025-09-20 13:24:54,271] INFO: main.py: ✅ Audio extrait : C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\audio\audio_full.mp3
-[2025-09-20 13:24:54,271] INFO: main.py: [2025-09-20 13:24:54,271] INFO: ✅ Fin étape: 1) Extraction audio depuis RAW_VIDEO (⏱ 1.927s)
-[2025-09-20 13:24:54,271] INFO: main.py: 
-[2025-09-20 13:24:54,271] INFO: main.py: 
-[2025-09-20 13:24:54,271] INFO: main.py: [2025-09-20 13:24:54,271] INFO: 🚀 Début étape: 2) Transcription + diarisation
-[2025-09-20 13:24:54,358] INFO: main.py: ℹ️ Durée audio (ffprobe): 00:03:20.181 (200.181s)
-[2025-09-20 13:24:56,973] INFO: main.py: [2025-09-20 13:24:56,972] INFO: HTTP Request: POST https://api.assemblyai.com/v2/upload "HTTP/1.1 200 OK"
-[2025-09-20 13:24:57,205] INFO: main.py: [2025-09-20 13:24:57,205] INFO: HTTP Request: POST https://api.assemblyai.com/v2/transcript "HTTP/1.1 200 OK"
-[2025-09-20 13:24:57,398] INFO: main.py: [2025-09-20 13:24:57,398] INFO: HTTP Request: GET https://api.assemblyai.com/v2/transcript/d4c354f9-3c04-4ed9-af31-9bb337233591 "HTTP/1.1 200 OK"
-[2025-09-20 13:25:00,581] INFO: main.py: [2025-09-20 13:25:00,581] INFO: HTTP Request: GET https://api.assemblyai.com/v2/transcript/d4c354f9-3c04-4ed9-af31-9bb337233591 "HTTP/1.1 200 OK"
-[2025-09-20 13:25:03,760] INFO: main.py: [2025-09-20 13:25:03,760] INFO: HTTP Request: GET https://api.assemblyai.com/v2/transcript/d4c354f9-3c04-4ed9-af31-9bb337233591 "HTTP/1.1 200 OK"
-[2025-09-20 13:25:07,194] INFO: main.py: [2025-09-20 13:25:07,194] INFO: HTTP Request: GET https://api.assemblyai.com/v2/transcript/d4c354f9-3c04-4ed9-af31-9bb337233591 "HTTP/1.1 200 OK"
-[2025-09-20 13:25:07,571] INFO: main.py: ℹ️ AAI: status=completed, texte=3843 chars
-[2025-09-20 13:25:07,571] INFO: main.py: ⚠️ Diarisation s'arrête avant la fin: last_end=00:03:16.044 ; fin audio=00:03:20.181 ; gap=4.137s
-[2025-09-20 13:25:07,589] INFO: main.py: ✅ Fichiers générés :
-[2025-09-20 13:25:07,589] INFO: main.py:  - C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\transcripts\transcription_full.txt
-[2025-09-20 13:25:07,590] INFO: main.py:  - C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\transcripts\diarization_segments.json
-[2025-09-20 13:25:07,590] INFO: main.py:  - C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\transcripts\transcription_segments.txt
-[2025-09-20 13:25:07,591] INFO: main.py:  - C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\transcripts\transcription_segments_with_blanks.txt
-[2025-09-20 13:25:07,591] INFO: main.py:  - C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\transcripts\blanks.json
-[2025-09-20 13:25:07,591] INFO: main.py:  - C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\transcripts\speakers.json
-[2025-09-20 13:25:07,591] INFO: main.py: ⏱️ Couverture diarisation: last_end=00:03:20.181 ; fin audio=00:03:20.181 ; Δ=+0.000s
-[2025-09-20 13:25:07,592] INFO: main.py: [2025-09-20 13:25:07,590] INFO: ✅ Fin étape: 2) Transcription + diarisation (⏱ 13.308s)
-[2025-09-20 13:25:07,592] INFO: main.py: 
-[2025-09-20 13:25:07,592] INFO: main.py: 
-[2025-09-20 13:25:07,592] INFO: main.py: [2025-09-20 13:25:07,590] INFO: 🚀 Début étape: 3) Vérification + réécriture intervenants
-[2025-09-20 13:25:07,803] INFO: main.py: 
-[2025-09-20 13:25:07,803] INFO: main.py: --- Aperçu de la transcription (début) ---
-[2025-09-20 13:25:07,803] INFO: main.py: [0.01 → 1.05] SPKA : Oui allô ?
-[2025-09-20 13:25:07,804] INFO: main.py: [1.05 → 2.61] SPKB : Bonjour madame, c'est bien le café ?
-[2025-09-20 13:25:07,804] INFO: main.py: [2.61 → 3.11] SPKA : Allô ?
-[2025-09-20 13:25:07,804] INFO: main.py: [3.11 → 4.37] SPKB : Je disais, bonjour madame.
-[2025-09-20 13:25:07,804] INFO: main.py: [4.37 → 7.37] SPKA : Attendez, je comprends pas, pourquoi vous dites bonjour madame ? J'ai une voix masculine, non ?
-[2025-09-20 13:25:07,804] INFO: main.py: [7.37 → 9.11] SPKB : Moi, bon, si vous voulez, on peut dire ça comme ça.
-[2025-09-20 13:25:07,805] INFO: main.py: [9.11 → 11.09] SPKA : Mais j'ai quand même une voix masculine, pourquoi vous dites bonjour madame ?
-[2025-09-20 13:25:07,805] INFO: main.py: [11.09 → 12.97] SPKB : Bah, par politesse, excusez-moi madame.
-[2025-09-20 13:25:07,805] INFO: main.py: [12.97 → 17.79] SPKA : Bon, c'est pas grave, mais bon, j'ai bien dit votre gonzesse, propriétaire. Mais je suis pas homosexuel, et c'est pourquoi monsieur, désolé.
-[2025-09-20 13:25:07,805] INFO: main.py: [17.79 → 20.83] SPKB : Ah non, mais attention, j'ai rien contre l'homosexualité, au contraire, je vous trouve très...
-[2025-09-20 13:25:07,805] INFO: main.py: [20.83 → 22.59] SPKA : Bah non, allez-y, dépêchez-vous, j'ai pas le temps, c'est un commerce.
-[2025-09-20 13:25:07,805] INFO: main.py: [22.59 → 23.89] SPKB : Ah non, mais attention, je ne juge pas.
-[2025-09-20 13:25:07,806] INFO: main.py: [23.89 → 32.41] SPKA : Ah, mais vous n'êtes pas obligé, moi non plus, Vous avez des décorations, je vais vous demander des décorations.
-[2025-09-20 13:25:07,806] INFO: main.py: [32.41 → 34.23] SPKB : Bah non, pas besoin de demander puisque je vous l'apporte.
-[2025-09-20 13:25:07,806] INFO: main.py: [34.23 → 35.49] SPKA : Et c'est pour quelle société, ça ?
-[2025-09-20 13:25:07,806] INFO: main.py: [35.49 → 36.24] SPKB : L'établissement Martin.
-[2025-09-20 13:25:07,806] INFO: main.py: [36.24 → 48.40] SPKA : C'Est parce que pour le nouvel an chinois. Ah bah j'ai déjà tout réservé. Ah bah non j'ai pas sifflé.
-[2025-09-20 13:25:07,806] INFO: main.py: [48.40 → 53.23] SPKB : Non mais ça doit être le téléphone qui résonne. Ah bah c'est à dire que
-[2025-09-20 13:25:07,806] INFO: main.py: --- Fin de l’aperçu ---
-[2025-09-20 13:25:07,806] INFO: main.py: 
-[2025-09-20 13:25:07,806] INFO: main.py: ✅ Le contenu vous semble-t-il correct ?
-[2025-09-20 13:25:07,807] INFO: main.py: Appuie sur [y] pour continuer, [n] pour arrêter, ou attendre 5 minutes pour continuer automatiquement.
-[2025-09-20 13:25:38,074] INFO: main.py: ⏳ Temps écoulé. Suite du traitement...
-[2025-09-20 13:28:33,800] INFO: main.py: [2025-09-20 13:28:33,800] INFO: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
-[2025-09-20 13:28:33,819] INFO: main.py: ✅ Fichier réécrit enregistré : C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\transcripts\transcription_segments_intervenants.txt
-[2025-09-20 13:28:33,857] INFO: main.py: [2025-09-20 13:28:33,819] INFO: ✅ Fin étape: 3) Vérification + réécriture intervenants (⏱ 206.229s)
-[2025-09-20 13:28:33,857] INFO: main.py: 
-[2025-09-20 13:28:33,857] INFO: main.py: 
-[2025-09-20 13:28:33,857] INFO: main.py: [2025-09-20 13:28:33,819] INFO: 🚀 Début étape: 4) Découpage MP3 par segments réécrits
-[2025-09-20 13:28:36,852] INFO: main.py: ✅ 67 segments exportés dans C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\audio_segments
-[2025-09-20 13:28:36,852] INFO: main.py: 📝 Manifeste: C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\audio_segments\segments_manifest.json
-[2025-09-20 13:28:36,852] INFO: main.py: [2025-09-20 13:28:36,852] INFO: ✅ Fin étape: 4) Découpage MP3 par segments réécrits (⏱ 3.039s)
-[2025-09-20 13:28:36,852] INFO: main.py: 
-[2025-09-20 13:28:36,852] INFO: main.py: 
-[2025-09-20 13:28:36,852] INFO: main.py: [2025-09-20 13:28:36,852] INFO: 🚀 Début étape: 5) Génération image de fond + split 9:16
-[2025-09-20 13:28:36,852] INFO: main.py: 
-[2025-09-20 13:28:36,852] INFO: main.py: --- Aperçu de la transcription (début) ---
-[2025-09-20 13:28:36,852] INFO: main.py: [0.01 → 1.05] SPKA : Oui allô ?
-[2025-09-20 13:28:36,852] INFO: main.py: [1.05 → 2.61] SPKB : Bonjour madame, c'est bien le café ?
-[2025-09-20 13:28:36,852] INFO: main.py: [2.61 → 3.11] SPKA : Allô ?
-[2025-09-20 13:28:36,852] INFO: main.py: [3.11 → 4.37] SPKB : Je disais, bonjour madame.
-[2025-09-20 13:28:36,852] INFO: main.py: [4.37 → 7.37] SPKA : Attendez, je comprends pas, pourquoi vous dites bonjour madame ? J'ai une voix masculine, non ?
-[2025-09-20 13:28:36,852] INFO: main.py: [7.37 → 9.11] SPKB : Moi, bon, si vous voulez, on peut dire ça comme ça.
-[2025-09-20 13:28:36,852] INFO: main.py: [9.11 → 11.09] SPKA : Mais j'ai quand même une voix masculine, pourquoi vous dites bonjour madame ?
-[2025-09-20 13:28:36,852] INFO: main.py: [11.09 → 12.97] SPKB : Bah, par politesse, excusez-moi madame.
-[2025-09-20 13:28:36,852] INFO: main.py: [12.97 → 17.79] SPKA : Bon, c'est pas grave, mais bon, j'ai bien dit votre gonzesse, propriétaire. Mais je suis pas homosexuel, et c'est pourquoi monsieur, désolé.
-[2025-09-20 13:28:36,852] INFO: main.py: [17.79 → 20.83] SPKB : Ah non, mais attention, j'ai rien contre l'homosexualité, au contraire, je vous trouve très...
-[2025-09-20 13:28:36,852] INFO: main.py: [20.83 → 22.59] SPKA : Bah non, allez-y, dépêchez-vous, j'ai pas le temps, c'est un commerce.
-[2025-09-20 13:28:36,863] INFO: main.py: [22.59 → 23.89] SPKB : Ah non, mais attention, je ne juge pas.
-[2025-09-20 13:28:36,863] INFO: main.py: [23.89 → 32.41] SPKA : Ah, mais vous n'êtes pas obligé, moi non plus, Vous avez des décorations, je vais vous demander des décorations.
-[2025-09-20 13:28:36,864] INFO: main.py: [32.41 → 34.23] SPKB : Bah non, pas besoin de demander puisque je vous l'apporte.
-[2025-09-20 13:28:36,864] INFO: main.py: [34.23 → 35.49] SPKA : Et c'est pour quelle société, ça ?
-[2025-09-20 13:28:36,864] INFO: main.py: [35.49 → 36.24] SPKB : L'établissement Martin.
-[2025-09-20 13:28:36,864] INFO: main.py: [36.24 → 48.40] SPKA : C'Est parce que pour le nouvel an chinois. Ah bah j'ai déjà tout réservé. Ah bah non j'ai pas sifflé.
-[2025-09-20 13:28:36,864] INFO: main.py: [48.40 → 53.23] SPKB : Non mais ça doit être le téléphone qui résonne. Ah bah c'est à dire que
-[2025-09-20 13:28:36,864] INFO: main.py: --- Fin de l’aperçu ---
-[2025-09-20 13:28:36,865] INFO: main.py: 
-[2025-09-20 13:28:36,865] INFO: main.py: ✅ Le contenu vous semble-t-il correct ?
-[2025-09-20 13:28:36,865] INFO: main.py: Appuie sur [y] pour continuer, [n] pour arrêter, ou attendre 5 minutes pour continuer automatiquement.
-[2025-09-20 13:29:07,106] INFO: main.py: ⏳ Temps écoulé. Suite du traitement...
-[2025-09-20 13:29:07,106] INFO: main.py: ✅ Prompt image généré (template: 2.txt) → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\images\prompt.txt
-[2025-09-20 13:29:07,106] INFO: main.py: ⏳ Génération de l'image via OpenAI...
-[2025-09-20 13:30:00,932] INFO: main.py: [2025-09-20 13:30:00,932] INFO: HTTP Request: POST https://api.openai.com/v1/images/generations "HTTP/1.1 200 OK"
-[2025-09-20 13:30:01,617] INFO: main.py: ✅ Image générée : C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\images\full_background.png
-[2025-09-20 13:30:01,994] INFO: main.py: ⚠️ Redimension de l’image en 1080x960 pour TikTok.
-[2025-09-20 13:30:02,123] INFO: main.py: ✅ Deux images 9:16 générées (gauche/droite).
-[2025-09-20 13:30:02,123] INFO: main.py: [2025-09-20 13:30:02,123] INFO: ✅ Fin étape: 5) Génération image de fond + split 9:16 (⏱ 85.271s)
-[2025-09-20 13:30:02,123] INFO: main.py: 
-[2025-09-20 13:30:02,123] INFO: main.py: 
-[2025-09-20 13:30:02,123] INFO: main.py: [2025-09-20 13:30:02,123] INFO: 🚀 Début étape: 6) Génération vidéos segments (Adobe)
-[2025-09-20 13:30:02,123] INFO: main.py: ⏳ Lancement de 67 segments (max 4 pages parallèles, 1 seul navigateur)
-[2025-09-20 13:31:07,652] INFO: main.py: ✅ Terminé 4 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 4.mp4 (⏱ 55.83s)
-[2025-09-20 13:31:23,512] INFO: main.py: ✅ Terminé 3 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 3.mp4 (⏱ 71.70s)
-[2025-09-20 13:31:24,143] INFO: main.py: ✅ Terminé 1 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 1.mp4 (⏱ 72.33s)
-[2025-09-20 13:31:24,939] INFO: main.py: ✅ Terminé 2 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 2.mp4 (⏱ 73.13s)
-[2025-09-20 13:32:13,212] INFO: main.py: ✅ Terminé 8 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 8.mp4 (⏱ 48.14s)
-[2025-09-20 13:32:27,976] INFO: main.py: ✅ Terminé 5 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 5.mp4 (⏱ 80.17s)
-[2025-09-20 13:32:28,993] INFO: main.py: ✅ Terminé 7 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 7.mp4 (⏱ 64.69s)
-[2025-09-20 13:32:31,111] INFO: main.py: ✅ Terminé 6 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 6.mp4 (⏱ 67.46s)
-[2025-09-20 13:33:23,618] INFO: main.py: ✅ Terminé 12 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 12.mp4 (⏱ 52.35s)
-[2025-09-20 13:33:30,193] INFO: main.py: ✅ Terminé 9 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 9.mp4 (⏱ 76.81s)
-[2025-09-20 13:33:37,730] INFO: main.py: ✅ Terminé 10 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 10.mp4 (⏱ 69.63s)
-[2025-09-20 13:33:41,029] INFO: main.py: ✅ Terminé 11 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 11.mp4 (⏱ 71.86s)
-[2025-09-20 13:34:32,900] INFO: main.py: ✅ Terminé 16 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 16.mp4 (⏱ 50.65s)
-[2025-09-20 13:34:35,703] INFO: main.py: ✅ Terminé 14 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 14.mp4 (⏱ 65.07s)
-[2025-09-20 13:34:55,854] INFO: main.py: ✅ Terminé 15 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 15.mp4 (⏱ 77.89s)
-[2025-09-20 13:34:56,292] INFO: main.py: ✅ Terminé 13 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 13.mp4 (⏱ 92.51s)
-[2025-09-20 13:35:41,981] INFO: main.py: ✅ Terminé 18 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 18.mp4 (⏱ 66.04s)
-[2025-09-20 13:35:57,925] INFO: main.py: ✅ Terminé 20 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 20.mp4 (⏱ 61.48s)
-[2025-09-20 13:36:05,036] INFO: main.py: ✅ Terminé 17 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 17.mp4 (⏱ 91.75s)
-[2025-09-20 13:36:11,431] INFO: main.py: ✅ Terminé 19 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 19.mp4 (⏱ 75.14s)
-[2025-09-20 13:36:57,370] INFO: main.py: ✅ Terminé 21 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 21.mp4 (⏱ 75.22s)
-[2025-09-20 13:37:13,469] INFO: main.py: ✅ Terminé 24 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 24.mp4 (⏱ 58.21s)
-[2025-09-20 13:37:14,289] INFO: main.py: ✅ Terminé 23 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 23.mp4 (⏱ 68.03s)
-[2025-09-20 13:37:37,610] INFO: main.py: ✅ Terminé 22 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 22.mp4 (⏱ 99.41s)
-[2025-09-20 13:38:12,061] INFO: main.py: ✅ Terminé 25 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 25.mp4 (⏱ 74.40s)
-[2025-09-20 13:38:14,203] INFO: main.py: ✅ Terminé 26 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 26.mp4 (⏱ 60.50s)
-[2025-09-20 13:38:33,121] INFO: main.py: ✅ Terminé 27 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 27.mp4 (⏱ 78.71s)
-[2025-09-20 13:38:36,573] INFO: main.py: ✅ Terminé 28 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 28.mp4 (⏱ 58.68s)
-[2025-09-20 13:39:16,042] INFO: main.py: ✅ Terminé 30 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 30.mp4 (⏱ 61.68s)
-[2025-09-20 13:39:18,396] INFO: main.py: ✅ Terminé 29 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 29.mp4 (⏱ 66.00s)
-[2025-09-20 13:39:42,033] INFO: main.py: ✅ Terminé 31 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 31.mp4 (⏱ 67.84s)
-[2025-09-20 13:39:42,166] INFO: main.py: ✅ Terminé 32 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 32.mp4 (⏱ 65.46s)
-[2025-09-20 13:40:25,552] INFO: main.py: ✅ Terminé 34 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 34.mp4 (⏱ 67.03s)
-[2025-09-20 13:40:43,311] INFO: main.py: ✅ Terminé 35 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 35.mp4 (⏱ 60.80s)
-[2025-09-20 13:40:43,315] INFO: main.py: ✅ Terminé 36 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 36.mp4 (⏱ 60.80s)
-[2025-09-20 13:40:43,338] INFO: main.py: ✅ Terminé 33 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 33.mp4 (⏱ 86.94s)
-[2025-09-20 13:41:31,701] INFO: main.py: ✅ Terminé 40 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 40.mp4 (⏱ 47.90s)
-[2025-09-20 13:41:44,017] INFO: main.py: ✅ Terminé 37 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 37.mp4 (⏱ 78.00s)
-[2025-09-20 13:41:45,812] INFO: main.py: ✅ Terminé 38 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 38.mp4 (⏱ 62.03s)
-[2025-09-20 13:41:46,113] INFO: main.py: ✅ Terminé 39 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 39.mp4 (⏱ 62.32s)
-[2025-09-20 13:42:37,742] INFO: main.py: ✅ Terminé 42 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 42.mp4 (⏱ 53.51s)
-[2025-09-20 13:42:40,493] INFO: main.py: ✅ Terminé 44 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 44.mp4 (⏱ 54.27s)
-[2025-09-20 13:43:00,995] INFO: main.py: ✅ Terminé 43 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 43.mp4 (⏱ 74.99s)
-[2025-09-20 13:43:01,220] INFO: main.py: ✅ Terminé 41 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 41.mp4 (⏱ 89.18s)
-[2025-09-20 13:43:44,356] INFO: main.py: ✅ Terminé 46 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 46.mp4 (⏱ 63.70s)
-[2025-09-20 13:43:48,346] INFO: main.py: ✅ Terminé 48 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 48.mp4 (⏱ 46.75s)
-[2025-09-20 13:44:00,133] INFO: main.py: ✅ Terminé 45 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 45.mp4 (⏱ 81.97s)
-[2025-09-20 13:44:11,739] INFO: main.py: ✅ Terminé 47 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 47.mp4 (⏱ 70.16s)
-[2025-09-20 13:45:07,302] INFO: main.py: ✅ Terminé 49 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 49.mp4 (⏱ 82.59s)
-[2025-09-20 13:45:09,263] INFO: main.py: ✅ Terminé 51 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 51.mp4 (⏱ 65.48s)
-[2025-09-20 13:45:37,348] INFO: main.py: ✅ Terminé 50 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 50.mp4 (⏱ 108.83s)
-[2025-09-20 13:45:54,797] INFO: main.py: ✅ Terminé 52 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 52.mp4 (⏱ 102.92s)
-[2025-09-20 13:46:11,704] INFO: main.py: ✅ Terminé 54 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 54.mp4 (⏱ 62.32s)
-[2025-09-20 13:46:52,039] INFO: main.py: ✅ Terminé 55 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 55.mp4 (⏱ 74.47s)
-[2025-09-20 13:47:04,224] INFO: main.py: ✅ Terminé 53 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 53.mp4 (⏱ 116.46s)
-[2025-09-20 13:47:40,728] INFO: main.py: ✅ Terminé 57 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 57.mp4 (⏱ 88.69s)
-[2025-09-20 13:47:42,453] INFO: main.py: ✅ Terminé 56 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 56.mp4 (⏱ 107.34s)
-[2025-09-20 13:48:40,033] INFO: main.py: ✅ Terminé 59 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 59.mp4 (⏱ 95.66s)
-[2025-09-20 13:48:57,043] INFO: main.py: ✅ Terminé 58 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\femme 1 - femme - 58.mp4 (⏱ 124.64s)
-[2025-09-20 13:49:14,706] INFO: main.py: ✅ Terminé 61 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 61.mp4 (⏱ 92.12s)
-[2025-09-20 13:49:43,630] INFO: main.py: ✅ Terminé 60 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 60.mp4 (⏱ 122.60s)
-[2025-09-20 13:50:34,312] INFO: main.py: ✅ Terminé 62 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 62.mp4 (⏱ 113.99s)
-[2025-09-20 13:51:27,915] INFO: main.py: ✅ Terminé 64 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 64.mp4 (⏱ 132.83s)
-[2025-09-20 13:51:46,085] INFO: main.py: ✅ Terminé 63 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 63.mp4 (⏱ 168.79s)
-[2025-09-20 13:52:12,396] INFO: main.py: ✅ Terminé 65 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\Mr Martin - homme - 65.mp4 (⏱ 148.51s)
-[2025-09-20 13:52:20,429] INFO: main.py: ✅ Terminé 66 → C:\Users\nikos\OneDrive\Bureau\MR_MARTIN\animate_video_with_adobe\video_segments\homme 1 - homme - 66.mp4 (⏱ 105.80s)
+[2025-10-02 07:13:32,828] INFO: Début du cycle de génération
+[2025-10-02 07:13:32,829] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:13:32,830] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:13:42,844] INFO: Début du cycle de génération
+[2025-10-02 07:13:42,845] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:13:42,845] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:13:52,848] INFO: Début du cycle de génération
+[2025-10-02 07:13:52,848] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:13:52,848] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:14:02,857] INFO: Début du cycle de génération
+[2025-10-02 07:14:02,857] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:14:02,858] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:14:12,863] INFO: Début du cycle de génération
+[2025-10-02 07:14:12,864] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:14:12,864] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:14:22,870] INFO: Début du cycle de génération
+[2025-10-02 07:14:22,871] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:14:22,871] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:14:32,879] INFO: Début du cycle de génération
+[2025-10-02 07:14:32,880] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:14:32,880] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:14:42,895] INFO: Début du cycle de génération
+[2025-10-02 07:14:42,896] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:14:42,896] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:14:52,903] INFO: Début du cycle de génération
+[2025-10-02 07:14:52,904] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:14:52,905] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:15:02,917] INFO: Début du cycle de génération
+[2025-10-02 07:15:02,918] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:15:02,918] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:15:12,921] INFO: Début du cycle de génération
+[2025-10-02 07:15:12,922] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:15:12,922] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:15:22,937] INFO: Début du cycle de génération
+[2025-10-02 07:15:22,938] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:15:22,939] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:15:32,945] INFO: Début du cycle de génération
+[2025-10-02 07:15:32,945] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:15:32,945] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:15:42,958] INFO: Début du cycle de génération
+[2025-10-02 07:15:42,959] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:15:42,959] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:15:52,971] INFO: Début du cycle de génération
+[2025-10-02 07:15:52,971] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:15:52,972] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:16:02,985] INFO: Début du cycle de génération
+[2025-10-02 07:16:02,985] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:16:02,985] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:16:12,993] INFO: Début du cycle de génération
+[2025-10-02 07:16:12,994] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:16:12,994] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:16:22,996] INFO: Début du cycle de génération
+[2025-10-02 07:16:22,997] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:16:22,997] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:16:33,001] INFO: Début du cycle de génération
+[2025-10-02 07:16:33,001] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:16:33,002] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:16:43,003] INFO: Début du cycle de génération
+[2025-10-02 07:16:43,004] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:16:43,004] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:16:53,007] INFO: Début du cycle de génération
+[2025-10-02 07:16:53,008] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:16:53,008] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:17:03,010] INFO: Début du cycle de génération
+[2025-10-02 07:17:03,916] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:17:03,918] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:17:13,924] INFO: Début du cycle de génération
+[2025-10-02 07:17:13,925] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:17:13,925] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:17:23,938] INFO: Début du cycle de génération
+[2025-10-02 07:17:23,939] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:17:23,939] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:17:33,953] INFO: Début du cycle de génération
+[2025-10-02 07:17:33,954] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:17:33,954] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:17:43,957] INFO: Début du cycle de génération
+[2025-10-02 07:17:43,958] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:17:43,958] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:17:53,970] INFO: Début du cycle de génération
+[2025-10-02 07:17:53,970] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:17:53,971] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:18:03,975] INFO: Début du cycle de génération
+[2025-10-02 07:18:03,977] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:18:03,977] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:18:13,986] INFO: Début du cycle de génération
+[2025-10-02 07:18:13,987] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:18:13,987] INFO: Fin du cycle de génération. Pause 10 secondes
+[2025-10-02 07:18:23,993] INFO: Début du cycle de génération
+[2025-10-02 07:18:23,994] INFO: Aucune vidéo trouvée dans ./download. Attente du prochain cycle.
+[2025-10-02 07:18:23,994] INFO: Fin du cycle de génération. Pause 10 secondes

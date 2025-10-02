@@ -36,7 +36,7 @@ BASE_DIR = os.getenv("BASE_DIR", ".")
 URL_ADOBE = os.getenv("URL_ADOBE")
 IMAGE_LEFT_PATH = os.getenv("IMAGE_LEFT_PATH")
 IMAGE_RIGHT_PATH = os.getenv("IMAGE_RIGHT_PATH")
-HEADLESS = os.getenv("HEADLESS", "0").strip().lower() in ("1", "true", "yes")
+HEADLESS = os.getenv("HEADLESS", "1").strip().lower() in ("1", "true", "yes")
 SLOWMO_MS = int(os.getenv("SLOWMO_MS", "0"))
 TIMEOUT_MULT = float(os.getenv("TIMEOUT_MULT", "2.5"))
 VERBOSE_PAGE_LOGS = os.getenv("VERBOSE_PAGE_LOGS", "0").strip().lower() in ("1","true","yes")
@@ -47,7 +47,7 @@ STEP_RETRIES = 6
 MAX_RETRIES_TASK = 3
 DOWNLOAD_TIMEOUT_MS = int(300_000 * TIMEOUT_MULT)
 NAV_TIMEOUT_MS = int(35_000 * TIMEOUT_MULT)
-ACTION_TIMEOUT_MS = int(10_000 * TIMEOUT_MULT)
+ACTION_TIMEOUT_MS = int(15_000 * TIMEOUT_MULT)
 AUDIO_PROC_TIMEOUT_MS = int(90_000 * TIMEOUT_MULT)
 
 VIDEO_SEGMENTS_DIR = os.getenv("VIDEO_SEGMENTS_DIR", os.path.join(BASE_DIR, "video_segments"))
@@ -300,7 +300,7 @@ async def _run_task_on_page(context, task: Task):
         if not await upload_file_to_input(page, 'input[type="file"][accept*="image"]', image_path):
             await _screenshot(page, "bg_upload_fail", task)
             raise RuntimeError("Upload background échoué")
-        await wait_until_idle_ui(page, timeout_ms=12_000)
+        await wait_until_idle_ui(page, timeout_ms=25_000)
 
         # 9:16 (best-effort)
         try:
