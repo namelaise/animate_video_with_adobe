@@ -182,8 +182,8 @@ def assemble_from_tail_with_transcript(
         def fmt(t):
             ms=int(round(t*1000)); h=ms//3600000; ms%=3600000; m=ms//60000; ms%=60000; s=ms/1000
             return f"{h:02d}:{m:02d}:{s:06.3f}"
-        print(f"- [{i}] {segment_files[i].name} | Lclip={fmt(clip_len)} | cible={fmt(target)} "
-              f"→ tail {fmt(base_len)} + loop x{loops}")
+        # print(f"- [{i}] {segment_files[i].name} | Lclip={fmt(clip_len)} | cible={fmt(target)} "
+        #       f"→ tail {fmt(base_len)} + loop x{loops}")
 
     # Concat de tous les segments
     filter_parts.append("".join(concat_inputs) + f"concat=n={n_pairs}:v=1:a=0[vcat]")

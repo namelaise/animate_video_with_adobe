@@ -10,6 +10,8 @@ config/
 *.log
 *.tmp
 .DS_Store
+logs/log.txt
+
 
 # Environnement virtuel
 venv/
