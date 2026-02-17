@@ -41,10 +41,12 @@ SLOWMO_MS = int(os.getenv("SLOWMO_MS", "0"))
 TIMEOUT_MULT = float(os.getenv("TIMEOUT_MULT", "2.5"))
 VERBOSE_PAGE_LOGS = os.getenv("VERBOSE_PAGE_LOGS", "0").strip().lower() in ("1","true","yes")
 BLOCK_TRACKING = os.getenv("BLOCK_TRACKING", "1").strip().lower() in ("1","true","yes")
+BG_SECOND_PASS_NO_WAIT = os.getenv("BG_SECOND_PASS_NO_WAIT", "0").strip().lower() in ("1","true","yes")
+
 
 # --- Constantes
-STEP_RETRIES = 6
-MAX_RETRIES_TASK = 3
+STEP_RETRIES = 10
+MAX_RETRIES_TASK = 10
 DOWNLOAD_TIMEOUT_MS = int(300_000 * TIMEOUT_MULT)
 NAV_TIMEOUT_MS = int(35_000 * TIMEOUT_MULT)
 ACTION_TIMEOUT_MS = int(15_000 * TIMEOUT_MULT)
@@ -88,6 +90,31 @@ async def _screenshot(page, tag: str, task: Task):
     try:
         await page.screenshot(path=path, full_page=True)
         print(f"🖼️  Screenshot: {path}")
+    except Exception:
+        pass
+    
+async def click_no_wait(page, selector: str) -> bool:
+    """
+    Clique immédiatement si l'élément existe (sans wait), sinon ne fait rien.
+    Retourne True si un click a été tenté, False sinon.
+    """
+    try:
+        return await page.evaluate(
+            """(sel) => {
+                const el = document.querySelector(sel);
+                if (!el) return false;
+                el.click();
+                return true;
+            }""",
+            selector,
+        )
+    except Exception:
+        return False
+    
+async def click_no_wait_fire_and_forget(page, selector: str):
+    try:
+        # on schedule et on n'attend pas le résultat
+        asyncio.create_task(click_no_wait(page, selector))
     except Exception:
         pass
 
@@ -241,10 +268,26 @@ async def wait_ready_to_download(page):
 def background_for_label(name_label: str) -> str:
     return IMAGE_RIGHT_PATH if name_label.strip().lower() == "mr martin" else IMAGE_LEFT_PATH
 
-def puppet_selector_for_label(name_label: str, puppet_id_raw: str):
+# def puppet_selector_for_label(name_label: str, puppet_id_raw: str):
+#     if name_label.strip().lower() == "mr martin":
+#         return "img#Sticky\\ VQA\\.puppet-button"
+#     return f"img#{_sanitize_css_id(puppet_id_raw)}"
+
+def puppet_selectors_for_label(name_label: str, puppet_id_raw: str):
+    # Sticky forcé pour Mr Martin
     if name_label.strip().lower() == "mr martin":
-        return "img#Sticky\\ VQA\\.puppet-button"
-    return f"img#{_sanitize_css_id(puppet_id_raw)}"
+        puppet_id_raw = "Sticky VQA.puppet-button"
+
+    # IMPORTANT: on évite #id (escaping) => on utilise [id="..."]
+    return [
+        f'button.qa-thumbnail-button:has(img[id="{puppet_id_raw}"])',
+        f'img[id="{puppet_id_raw}"]',
+        f'button.qa-thumbnail-button:has(img[aria-label="Sticky"])' if "Sticky" in puppet_id_raw else "",
+        f'button.qa-thumbnail-button:has(img[alt="Sticky"])' if "Sticky" in puppet_id_raw else "",
+        f'img[aria-label="Sticky"]' if "Sticky" in puppet_id_raw else "",
+        f'img[alt="Sticky"]' if "Sticky" in puppet_id_raw else "",
+    ]
+
 
 # --- Une tâche sur une page dédiée
 async def _run_task_on_page(context, task: Task):
@@ -261,6 +304,7 @@ async def _run_task_on_page(context, task: Task):
     try:
         t_task = time.time()
         await page.goto(URL_ADOBE, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+        # await click_first(page, '[data-testid="sidebar-button-@hz/project-x:home"]', timeout=NAV_TIMEOUT_MS)
         await wait_until_idle_ui(page, timeout_ms=10_000)
 
         # Cookies (best-effort)
@@ -277,25 +321,61 @@ async def _run_task_on_page(context, task: Task):
         except Exception:
             pass
 
-        # Sélection puppet
-        puppet_sel = puppet_selector_for_label(task.nom, task.personnage_id)
-        alternatives = [
-            puppet_sel,
-            f"img[alt*='{task.personnage_id.split()[0]}']",
-            f"[data-testid='{_sanitize_css_id(task.personnage_id)}']",
-        ]
-        await click_first(page, alternatives, timeout=ACTION_TIMEOUT_MS)
+        # # Sélection puppet
+        # puppet_sel = puppet_selector_for_label(task.nom, task.personnage_id)
+        # alternatives = [
+        #     puppet_sel,
+        #     f"img[alt*='{task.personnage_id.split()[0]}']",
+        #     f"[data-testid='{_sanitize_css_id(task.personnage_id)}']",
+        # ]
+        # await click_first(page, alternatives, timeout=ACTION_TIMEOUT_MS)
+        
+        # Sélection puppet (robuste)
+        selectors = [s for s in puppet_selectors_for_label(task.nom, task.personnage_id) if s]
+
+        # On attend qu’au moins une vignette soit chargée (sinon "visible" ne viendra jamais)
+        try:
+            await page.locator("button.qa-thumbnail-button img.qa-thumbnail-image").first.wait_for(
+                state="attached", timeout=ACTION_TIMEOUT_MS
+            )
+        except Exception:
+            pass
+
+        sel = await wait_for_any(page, selectors, state="attached", timeout=ACTION_TIMEOUT_MS)
+
+        loc = page.locator(sel).first
+        try:
+            await loc.scroll_into_view_if_needed(timeout=ACTION_TIMEOUT_MS)
+        except Exception:
+            pass
+
+        # Le parent "button" clique mieux que l'img
+        try:
+            btn = loc.locator("xpath=ancestor::button[1]")
+            if await btn.count():
+                await btn.first.click(timeout=ACTION_TIMEOUT_MS)
+            else:
+                await loc.click(timeout=ACTION_TIMEOUT_MS)
+        except Exception:
+            # dernier recours: click forcé si Adobe “cache” visuellement mais c'est cliquable
+            try:
+                await loc.click(timeout=ACTION_TIMEOUT_MS, force=True)
+            except Exception:
+                await _screenshot(page, "puppet_click_fail", task)
+                raise
+
 
         # Mise à l'échelle + placement
         await set_puppet_scale(page, 0.33)
         delta_x = 80 if task.nom.strip().lower() == "mr martin" else -80
         await drag_center_horiz(page, delta_x=delta_x)
 
-        # Arrière-plan
+        # Arrière-plan (1ère passe normale)
         try:
             await click_first(page, ['sp-tab[label="Arrière-plan"]', 'sp-tab:has-text("Arrière-plan")'], timeout=ACTION_TIMEOUT_MS)
         except Exception:
             pass
+
         image_path = background_for_label(task.nom)
         if not await upload_file_to_input(page, 'input[type="file"][accept*="image"]', image_path):
             await _screenshot(page, "bg_upload_fail", task)

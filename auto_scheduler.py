@@ -1,3 +1,5 @@
+
+import socket
 import os
 import time
 import threading
@@ -8,6 +10,8 @@ import logging
 from datetime import datetime
 import sys
 from pathlib import Path
+from logging.handlers import RotatingFileHandler
+
 
 # ==============================
 # Configuration
@@ -45,10 +49,16 @@ console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
-# Handler fichier
-file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
+
+file_handler = RotatingFileHandler(
+    LOG_FILE,
+    maxBytes=5 * 1024 * 1024,  # 5 MB
+    backupCount=5,             # garde log.txt.1 ... log.txt.5
+    encoding="utf-8"
+)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
+
 
 
 # ==============================
@@ -160,6 +170,7 @@ def generation_loop():
                 logging.info(f'Vidéo choisie pour traitement: {src}')
                 ok = prepare_main_input(src)
                 if ok:
+                    wait_for_internet(poll_every=5)
                     run_main_script()
             logging.info(f'Fin du cycle de génération. Pause {GENERATE_INTERVAL} secondes')
         except Exception:
@@ -251,6 +262,7 @@ def posting_loop():
 
             video_to_post = vids[0]
             logging.info(f'Vidéo sélectionnée pour post: {video_to_post}')
+            wait_for_internet(poll_every=5)
             success = post_video(video_to_post)
             if success:
                 dest = os.path.join(POSTED_DIR, os.path.basename(video_to_post))
@@ -269,6 +281,31 @@ def posting_loop():
         except Exception:
             logging.exception('Erreur inattendue dans posting_loop')
         time.sleep(POST_INTERVAL)
+
+def has_internet(host="1.1.1.1", port=53, timeout=3) -> bool:
+    """
+    Vérifie l'accès Internet en ouvrant un socket TCP vers un DNS public.
+    - host=1.1.1.1 (Cloudflare) ou 8.8.8.8 (Google)
+    - port=53 (DNS)
+    """
+    try:
+        socket.setdefaulttimeout(timeout)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((host, port))
+        return True
+    except Exception:
+        return False
+
+
+def wait_for_internet(poll_every=5):
+    """
+    Bloque tant qu'il n'y a pas Internet.
+    """
+    while not has_internet():
+        logging.warning("Pas d'Internet détecté. Nouvelle tentative dans %ss...", poll_every)
+        time.sleep(poll_every)
+    logging.info("Internet OK.")
+
 
 
 # ==============================
