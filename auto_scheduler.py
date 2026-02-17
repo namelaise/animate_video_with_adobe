@@ -10,6 +10,8 @@ import logging
 from datetime import datetime
 import sys
 from pathlib import Path
+from logging.handlers import RotatingFileHandler
+
 
 # ==============================
 # Configuration
@@ -47,10 +49,16 @@ console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
-# Handler fichier
-file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
+
+file_handler = RotatingFileHandler(
+    LOG_FILE,
+    maxBytes=5 * 1024 * 1024,  # 5 MB
+    backupCount=5,             # garde log.txt.1 ... log.txt.5
+    encoding="utf-8"
+)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
+
 
 
 # ==============================
