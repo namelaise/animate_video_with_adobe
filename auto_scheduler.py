@@ -1,3 +1,5 @@
+
+import socket
 import os
 import time
 import threading
@@ -160,6 +162,7 @@ def generation_loop():
                 logging.info(f'Vidéo choisie pour traitement: {src}')
                 ok = prepare_main_input(src)
                 if ok:
+                    wait_for_internet(poll_every=5)
                     run_main_script()
             logging.info(f'Fin du cycle de génération. Pause {GENERATE_INTERVAL} secondes')
         except Exception:
@@ -251,6 +254,7 @@ def posting_loop():
 
             video_to_post = vids[0]
             logging.info(f'Vidéo sélectionnée pour post: {video_to_post}')
+            wait_for_internet(poll_every=5)
             success = post_video(video_to_post)
             if success:
                 dest = os.path.join(POSTED_DIR, os.path.basename(video_to_post))
@@ -269,6 +273,31 @@ def posting_loop():
         except Exception:
             logging.exception('Erreur inattendue dans posting_loop')
         time.sleep(POST_INTERVAL)
+
+def has_internet(host="1.1.1.1", port=53, timeout=3) -> bool:
+    """
+    Vérifie l'accès Internet en ouvrant un socket TCP vers un DNS public.
+    - host=1.1.1.1 (Cloudflare) ou 8.8.8.8 (Google)
+    - port=53 (DNS)
+    """
+    try:
+        socket.setdefaulttimeout(timeout)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((host, port))
+        return True
+    except Exception:
+        return False
+
+
+def wait_for_internet(poll_every=5):
+    """
+    Bloque tant qu'il n'y a pas Internet.
+    """
+    while not has_internet():
+        logging.warning("Pas d'Internet détecté. Nouvelle tentative dans %ss...", poll_every)
+        time.sleep(poll_every)
+    logging.info("Internet OK.")
+
 
 
 # ==============================
