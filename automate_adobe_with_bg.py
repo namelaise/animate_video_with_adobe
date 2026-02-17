@@ -49,7 +49,7 @@ STEP_RETRIES = 10
 MAX_RETRIES_TASK = 10
 DOWNLOAD_TIMEOUT_MS = int(300_000 * TIMEOUT_MULT)
 NAV_TIMEOUT_MS = int(35_000 * TIMEOUT_MULT)
-ACTION_TIMEOUT_MS = int(20_000 * TIMEOUT_MULT)
+ACTION_TIMEOUT_MS = int(15_000 * TIMEOUT_MULT)
 AUDIO_PROC_TIMEOUT_MS = int(90_000 * TIMEOUT_MULT)
 
 VIDEO_SEGMENTS_DIR = os.getenv("VIDEO_SEGMENTS_DIR", os.path.join(BASE_DIR, "video_segments"))
@@ -380,19 +380,7 @@ async def _run_task_on_page(context, task: Task):
         if not await upload_file_to_input(page, 'input[type="file"][accept*="image"]', image_path):
             await _screenshot(page, "bg_upload_fail", task)
             raise RuntimeError("Upload background échoué")
-
-        await wait_until_idle_ui(page, timeout_ms=30_000)
-
-        # 2e passe optionnelle: on reclique "Arrière-plan" sans attendre de retour
-        # Objectif: forcer le focus / "refresher" la sidebar sans bloquer le workflow
-        if BG_SECOND_PASS_NO_WAIT:
-            click_selectors = [
-                'sp-tab[label="Arrière-plan"]',
-                'sp-tab:has-text("Arrière-plan")',
-                '[data-testid*="background"]',
-            ]
-            for sel in click_selectors:
-                await click_no_wait_fire_and_forget(page, sel)
+        await wait_until_idle_ui(page, timeout_ms=25_000)
 
         # 9:16 (best-effort)
         try:
