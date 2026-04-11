@@ -119,7 +119,7 @@ def run_main_script():
             sys.executable,
             "-X", "utf8",
             "-u",
-            os.path.join(BASE_DIR, 'main.py')
+            os.path.join(BASE_DIR, 'main_v3.py')
         ]
         logging.info('Lancement de main.py avec %s', sys.executable)
 

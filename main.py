@@ -451,6 +451,9 @@ def generate_image_with_openai(script_text: str) -> str | None:
         resp = client.images.generate(
             model="gpt-image-1",
             prompt=prompt_text,
+            size="1536x1024",
+            quality="high",
+            output_format="png"
         )
         image_b64 = resp.data[0].b64_json
         with open(output_image_path, "wb") as f:
@@ -462,26 +465,70 @@ def generate_image_with_openai(script_text: str) -> str | None:
         print(f"❌  Génération image échouée : {e}")
         return None
 
+def center_crop_to_ratio(img: Image.Image, target_ratio: float) -> Image.Image:
+    w, h = img.size
+    current_ratio = w / h
+
+    if current_ratio > target_ratio:
+        # image trop large -> crop largeur
+        new_w = int(h * target_ratio)
+        left = (w - new_w) // 2
+        return img.crop((left, 0, left + new_w, h))
+    else:
+        # image trop haute -> crop hauteur
+        new_h = int(w / target_ratio)
+        top = (h - new_h) // 2
+        return img.crop((0, top, w, top + new_h))
+
 def split_background_to_tiktok_pairs() -> Tuple[str, str]:
     bg_path = os.path.join(IMAGES_DIR, "full_background.png")
-    img = Image.open(bg_path)
+    img = Image.open(bg_path).convert("RGB")
 
-    expected_w, expected_h = 1080, 960
-    if img.size != (expected_w, expected_h):
-        print(f"⚠️ Redimension de l’image en {expected_w}x{expected_h} pour TikTok.")
-        img = img.resize((expected_w, expected_h))
+    # 1) Crop au ratio 9:8
+    img = center_crop_to_ratio(img, 9 / 8)
 
-    left_img = img.crop((0, 0, 540, 960))
-    right_img = img.crop((540, 0, 1080, 960))
+    # 2) Normalisation en 1152x1024 (9:8 exact)
+    img = img.resize((1152, 1024), Image.Resampling.LANCZOS)
+
+    # 3) Split en deux moitiés 9:16 exactes
+    left_img = img.crop((0, 0, 576, 1024))
+    right_img = img.crop((576, 0, 1152, 1024))
+
+    # 4) Resize final vers le format attendu par ton pipeline
+    left_img = left_img.resize((540, 960), Image.Resampling.LANCZOS)
+    right_img = right_img.resize((540, 960), Image.Resampling.LANCZOS)
 
     left_path = os.path.join(LEFT_IMG_DIR, "left_0.png")
     right_path = os.path.join(RIGHT_IMG_DIR, "right_0.png")
 
-    left_img.save(left_path)
-    right_img.save(right_path)
+    left_img.save(left_path, format="PNG", optimize=True)
+    right_img.save(right_path, format="PNG", optimize=True)
 
-    print("✅ Deux images 9:16 générées (gauche/droite).")
+    print("✅ Deux images 9:16 générées (gauche/droite) avec crop propre.")
     return left_path, right_path
+
+# def split_background_to_tiktok_pairs() -> Tuple[str, str]:
+#     bg_path = os.path.join(IMAGES_DIR, "full_background.png")
+#     img = Image.open(bg_path)
+
+#     expected_w, expected_h = 1080, 960
+#     if img.size != (expected_w, expected_h):
+#         print(f"⚠️ Redimension de l’image en {expected_w}x{expected_h} pour TikTok.")
+#         img = img.resize((expected_w, expected_h))
+
+#     left_img = img.crop((0, 0, 540, 960))
+#     right_img = img.crop((540, 0, 1080, 960))
+
+#     left_path = os.path.join(LEFT_IMG_DIR, "left_0.png")
+#     right_path = os.path.join(RIGHT_IMG_DIR, "right_0.png")
+
+#     left_img.save(left_path)
+#     right_img.save(right_path)
+
+#     print("✅ Deux images 9:16 générées (gauche/droite).")
+#     return left_path, right_path
+
+
 
 # =========================
 #   AFFECTATION PUPPETS

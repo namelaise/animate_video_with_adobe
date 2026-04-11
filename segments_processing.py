@@ -192,7 +192,7 @@ def parse_diarization_segments_file(
     segments: List[Dict[str, object]] = []
 
     with open(chemin_fichier_segments, "r", encoding="utf-8") as fichier:
-        for ligne in fichier:
+        for numero_ligne, ligne in enumerate(fichier, start=1):
             ligne = ligne.strip()
             if not ligne:
                 continue
@@ -207,6 +207,7 @@ def parse_diarization_segments_file(
 
             if fin_s > debut_s:
                 segments.append({
+                    "line_index": numero_ligne,
                     "start": debut_s,
                     "end": fin_s,
                     "speaker": nom_locuteur,
@@ -259,7 +260,8 @@ def cut_audio_by_diarization(
 
     manifeste: List[Dict[str, object]] = []
 
-    for indice_segment, segment in enumerate(segments, start=1):
+    for segment in segments:
+        line_idx = segment["line_index"]
         debut_ms = int(segment["start"] * 1000) - padding_millisecondes
         fin_ms = int(segment["end"] * 1000) + padding_millisecondes
 
@@ -267,10 +269,11 @@ def cut_audio_by_diarization(
         fin_ms = _clamp(fin_ms, 0, duree_totale_ms)
         duree_ms = fin_ms - debut_ms
         if duree_ms < duree_minimale_conservee_millisecondes:
+            print(f"⚠️ Segment ligne {line_idx} ({segment['speaker']}): durée {duree_ms}ms < {duree_minimale_conservee_millisecondes}ms, skip.")
             continue
 
         nom_locuteur_slug = _slugify_nom(str(segment["speaker"]))
-        nom_fichier_sortie = f"seg_{indice_segment:03d}_{nom_locuteur_slug}.mp3"
+        nom_fichier_sortie = f"seg_{line_idx:03d}_{nom_locuteur_slug}.mp3"
         chemin_sortie_segment = os.path.join(dossier_sortie_segments_audio, nom_fichier_sortie)
 
         # ffmpeg : -ss + -t
@@ -307,7 +310,7 @@ def cut_audio_by_diarization(
             subprocess.run(cmd_fallback, check=False)
 
         manifeste.append({
-            "index": indice_segment,
+            "index": line_idx,
             "file": chemin_sortie_segment,
             "speaker": segment["speaker"],
             "start": round(float(segment["start"]), 3),
