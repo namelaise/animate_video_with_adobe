@@ -237,6 +237,56 @@ def preflight_mp4_checks(path: str) -> None:
 # TIKTOK
 # =========================================================
 
+def generate_tiktok_description(transcript_path: str) -> str:
+    """
+    Genere une description TikTok a partir de la transcription :
+    2 phrases max + hashtags contextuels + #mrmartin #canular
+    """
+    try:
+        segments = parse_segments_with_speakers(transcript_path)
+        if not segments:
+            log.warning("Aucun segment pour generer la description, fallback.")
+            return "#mrmartin #canular #prank"
+
+        # Construire un resume du dialogue (max 2000 chars pour le prompt)
+        dialogue_text = "\n".join(
+            f"{s['label']}: {s['text']}" for s in segments
+        )[:2000]
+
+        client = OpenAI()
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Tu es un community manager TikTok specialise dans les videos de canulars telephoniques. "
+                        "A partir du dialogue suivant, genere une description TikTok COURTE : "
+                        "- Maximum 2 phrases qui resument la situation de facon drole et accrocheuse. "
+                        "- Ajoute 1 a 3 hashtags en rapport avec le theme de la video. "
+                        "- Termine TOUJOURS par #mrmartin #canular "
+                        "- Pas de guillemets autour de la reponse. "
+                        "- Pas d'emoji sauf si ca apporte vraiment quelque chose."
+                    ),
+                },
+                {"role": "user", "content": dialogue_text},
+            ],
+            max_tokens=150,
+            temperature=0.8,
+        )
+        description = resp.choices[0].message.content.strip()
+        # S'assurer que les hashtags obligatoires sont presents
+        if "#mrmartin" not in description.lower():
+            description += " #mrmartin"
+        if "#canular" not in description.lower():
+            description += " #canular"
+        log.info(f"Description TikTok generee: {description}")
+        return description
+    except Exception as e:
+        log.error(f"Erreur generation description: {e}")
+        return "#mrmartin #canular #prank"
+
+
 TIKTOK_SPAM_RISK_KEY = "spam_risk_too_many_pending_share"
 
 
@@ -298,15 +348,15 @@ def stash_unposted_videos(
     return dest_dir
 
 
-def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable) -> Tuple[bool, str]:
+def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable, caption: str = None) -> Tuple[bool, str]:
     log_path = LOG_DIR / "upload_tiktok.log"
     preflight_mp4_checks(final_mp4)
 
     def _post():
-        return run_cmd_capture(
-            [python_exe, "post_tiktok_inbox.py", "--video", final_mp4, "--poll"],
-            log_path
-        )
+        cmd = [python_exe, "post_tiktok_inbox.py", "--video", final_mp4, "--poll"]
+        if caption:
+            cmd.extend(["--direct", "--caption", caption])
+        return run_cmd_capture(cmd, log_path)
 
     rc, out, err = _post()
     if rc == 0:
@@ -1157,13 +1207,16 @@ def run_pipeline_once() -> Tuple[bool, str]:
         else:
             audit.error("VIDÉO FINALE NON PRODUITE")
 
-    with time_step("10) Upload TikTok"):
+    with time_step("10) Generation description + Upload TikTok"):
+        # Generer la description TikTok a partir de la transcription
+        caption = generate_tiktok_description(ALIGNED_SEGMENTS_PATH)
+
         run_cmd_capture([sys.executable, "auth_tiktok_refresh.py"], LOG_DIR / "upload_tiktok.log")
 
         final_mp4 = VIDEO_FINALE_PATH
         wait_for_internet(label="Post TikTok")
 
-        ok, reason = upload_to_tiktok_with_retry(final_mp4, python_exe=sys.executable)
+        ok, reason = upload_to_tiktok_with_retry(final_mp4, python_exe=sys.executable, caption=caption)
 
         if ok:
             log.info("✅ Upload TikTok OK -> archivage standard")

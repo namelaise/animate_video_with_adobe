@@ -38,3 +38,11 @@ playwright-profile/
 download/
 logs/
 pending_posts/
+video_segments/
+video_composite/
+archive/
+soundcloud-profile/
+
+# Scraper
+scraper_history.json
+scraper_daily.json

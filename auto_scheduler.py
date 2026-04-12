@@ -11,6 +11,7 @@ from datetime import datetime
 import sys
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
+from scraper_tiktok import scrape_accounts, DEFAULT_ACCOUNTS, DEFAULT_DAILY_LIMIT, get_daily_count
 
 
 # ==============================
@@ -157,6 +158,46 @@ def run_main_script():
         logging.exception('Erreur lors de l’exécution streaming de main.py')
         return False
 
+
+
+SCRAPE_INTERVAL = 3600  # Re-verifier toutes les heures si le quota n'est pas atteint
+
+
+def scrape_if_needed():
+    """
+    Telecharge des videos si le quota quotidien n'est pas atteint.
+    Attend la connexion internet avant de scraper.
+    """
+    daily = get_daily_count()
+    if daily >= DEFAULT_DAILY_LIMIT:
+        logging.info(f'Quota scraping atteint ({daily}/{DEFAULT_DAILY_LIMIT}), pas de telechargement.')
+        return 0
+
+    # Verifier aussi combien de videos sont deja en attente dans download/
+    pending_downloads = find_download_videos()
+    if len(pending_downloads) >= DEFAULT_DAILY_LIMIT:
+        logging.info(f'{len(pending_downloads)} video(s) deja en attente dans download/, scraping differe.')
+        return 0
+
+    logging.info('Lancement du scraping TikTok...')
+    wait_for_internet(poll_every=30)
+    try:
+        downloaded = scrape_accounts(DEFAULT_ACCOUNTS, limit=DEFAULT_DAILY_LIMIT)
+        logging.info(f'Scraping termine: {downloaded} video(s) telechargee(s)')
+        return downloaded
+    except Exception:
+        logging.exception('Erreur lors du scraping TikTok')
+        return 0
+
+
+def scrape_loop():
+    """Boucle de scraping: verifie periodiquement si des videos doivent etre telechargees."""
+    while True:
+        try:
+            scrape_if_needed()
+        except Exception:
+            logging.exception('Erreur inattendue dans scrape_loop')
+        time.sleep(SCRAPE_INTERVAL)
 
 
 def generation_loop():
@@ -313,13 +354,20 @@ def wait_for_internet(poll_every=5):
 # ==============================
 if __name__ == '__main__':
     ensure_dirs()
+
+    # Scraping initial au demarrage (rattrapage si PC etait eteint)
+    logging.info('Scraping initial au demarrage...')
+    scrape_if_needed()
+
+    t0 = threading.Thread(target=scrape_loop, daemon=True)
     t1 = threading.Thread(target=generation_loop, daemon=True)
     t2 = threading.Thread(target=posting_loop, daemon=True)
+    t0.start()
     t1.start()
     # t2.start()
-    logging.info('auto_scheduler démarré. Appuyez sur Ctrl+C pour quitter.')
+    logging.info('auto_scheduler demarré (scraping + generation). Appuyez sur Ctrl+C pour quitter.')
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        logging.info('Interruption par utilisateur, arrêt du scheduler.')
+        logging.info('Interruption par utilisateur, arret du scheduler.')
