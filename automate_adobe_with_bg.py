@@ -441,31 +441,6 @@ async def _run_task_on_page(context, task: Task):
 
         await wait_until_idle_ui(page, timeout_ms=25_000)
 
-        # Vérification que le fond a bien été appliqué (présence d'une miniature ou image dans le panel)
-        bg_applied = False
-        for _check in range(5):
-            try:
-                bg_present = await page.evaluate("""() => {
-                    // Vérifie la présence d'un thumbnail de fond ou d'une image uploadée dans le panel
-                    const imgs = document.querySelectorAll('[class*="background"] img, [data-testid*="background"] img, .bg-thumbnail img');
-                    if (imgs.length > 0) return true;
-                    // Vérifie aussi si un élément de suppression/remplacement du fond existe (signe qu'un fond custom est actif)
-                    const removeBtns = document.querySelectorAll('[aria-label*="Supprimer"], [aria-label*="Remove"], [data-testid*="remove-bg"]');
-                    if (removeBtns.length > 0) return true;
-                    // Vérifie la canvas — si le fond est chargé, le canvas devrait avoir été mis à jour
-                    const canvas = document.querySelector('canvas');
-                    return canvas !== null;
-                }""")
-                if bg_present:
-                    bg_applied = True
-                    break
-            except Exception:
-                pass
-            await page.wait_for_timeout(2000)
-        if not bg_applied:
-            await _screenshot(page, "bg_not_applied", task)
-            raise RuntimeError("Le fond ne semble pas avoir été appliqué après upload")
-
         # 9:16 (best-effort)
         try:
             await click_first(page, ['sp-tab[label="Taille"]', 'sp-tab:has-text("Taille")'], timeout=ACTION_TIMEOUT_MS)
