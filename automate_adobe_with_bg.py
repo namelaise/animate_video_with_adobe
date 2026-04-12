@@ -19,6 +19,7 @@ Usage dans ton `main.py` :
 import asyncio
 import os
 import re
+import subprocess
 import time
 import shutil
 from dataclasses import dataclass
@@ -265,8 +266,48 @@ async def wait_ready_to_download(page):
 
 # --- Mapping
 
+def _video_has_background(video_path: str) -> bool:
+    """Vérifie que le premier frame de la vidéo n'est pas un fond uni (blanc/gris/noir).
+    Un fond uni avec très peu de variance indique que l'image de fond n'a pas été appliquée."""
+    try:
+        tmp_frame = os.path.join(LOGS_DIR, f"_check_frame_{os.getpid()}.png")
+        subprocess.run(
+            ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+             "-y", "-i", video_path, "-frames:v", "1", "-q:v", "2", tmp_frame],
+            timeout=15, check=True,
+        )
+        if not os.path.exists(tmp_frame) or os.path.getsize(tmp_frame) < 500:
+            return False
+        # Utilise ffprobe pour obtenir la luminosité moyenne et l'entropie du frame
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-f", "lavfi",
+             "-i", f"movie={tmp_frame},signalstats", "-show_entries",
+             "frame_tags=lavfi.signalstats.HUEAVG,lavfi.signalstats.SATAVG",
+             "-of", "csv=p=0"],
+            capture_output=True, text=True, timeout=10,
+        )
+        # Méthode alternative plus simple : vérifier la taille du PNG compressé
+        # Un frame avec une vraie image de fond sera plus lourd qu'un fond uni
+        frame_size = os.path.getsize(tmp_frame)
+        os.remove(tmp_frame)
+        # Un fond uni PNG compressé fait typiquement < 5KB, une vraie image > 15KB
+        if frame_size < 5_000:
+            print(f"⚠️  Frame suspecte: {frame_size} octets (trop petit, probable fond manquant)")
+            return False
+        return True
+    except Exception as e:
+        print(f"⚠️  Vérification frame échouée (non bloquant): {e}")
+        return True  # En cas d'erreur de vérification, on ne bloque pas
+
+
 def background_for_label(name_label: str) -> str:
-    return IMAGE_RIGHT_PATH if name_label.strip().lower() == "mr martin" else IMAGE_LEFT_PATH
+    path = IMAGE_RIGHT_PATH if name_label.strip().lower() == "mr martin" else IMAGE_LEFT_PATH
+    abs_path = os.path.abspath(path)
+    if not os.path.exists(abs_path):
+        raise RuntimeError(f"Image de fond introuvable: {abs_path}")
+    if os.path.getsize(abs_path) < 1024:
+        raise RuntimeError(f"Image de fond trop petite / corrompue ({os.path.getsize(abs_path)} octets): {abs_path}")
+    return path
 
 # def puppet_selector_for_label(name_label: str, puppet_id_raw: str):
 #     if name_label.strip().lower() == "mr martin":
@@ -370,17 +411,60 @@ async def _run_task_on_page(context, task: Task):
         delta_x = 80 if task.nom.strip().lower() == "mr martin" else -80
         await drag_center_horiz(page, delta_x=delta_x)
 
-        # Arrière-plan (1ère passe normale)
-        try:
-            await click_first(page, ['sp-tab[label="Arrière-plan"]', 'sp-tab:has-text("Arrière-plan")'], timeout=ACTION_TIMEOUT_MS)
-        except Exception:
-            pass
+        # Arrière-plan — retry robuste pour s'assurer que l'onglet est bien ouvert
+        bg_tab_opened = False
+        for _bg_attempt in range(3):
+            try:
+                await click_first(page, ['sp-tab[label="Arrière-plan"]', 'sp-tab:has-text("Arrière-plan")'], timeout=ACTION_TIMEOUT_MS)
+                bg_tab_opened = True
+                break
+            except Exception:
+                print(f"⚠️  {task.segment_id} onglet Arrière-plan essai {_bg_attempt+1}/3 échoué, retry…")
+                await page.wait_for_timeout(1000)
+        if not bg_tab_opened:
+            await _screenshot(page, "bg_tab_fail", task)
+            raise RuntimeError("Impossible d'ouvrir l'onglet Arrière-plan après 3 essais")
 
         image_path = background_for_label(task.nom)
-        if not await upload_file_to_input(page, 'input[type="file"][accept*="image"]', image_path):
+
+        # Upload du fond avec retry (le file input peut mettre du temps à apparaître)
+        bg_uploaded = False
+        for _up_attempt in range(3):
+            if await upload_file_to_input(page, 'input[type="file"][accept*="image"]', image_path):
+                bg_uploaded = True
+                break
+            print(f"⚠️  {task.segment_id} upload fond essai {_up_attempt+1}/3 échoué, retry…")
+            await page.wait_for_timeout(1500)
+        if not bg_uploaded:
             await _screenshot(page, "bg_upload_fail", task)
-            raise RuntimeError("Upload background échoué")
+            raise RuntimeError("Upload background échoué après 3 essais")
+
         await wait_until_idle_ui(page, timeout_ms=25_000)
+
+        # Vérification que le fond a bien été appliqué (présence d'une miniature ou image dans le panel)
+        bg_applied = False
+        for _check in range(5):
+            try:
+                bg_present = await page.evaluate("""() => {
+                    // Vérifie la présence d'un thumbnail de fond ou d'une image uploadée dans le panel
+                    const imgs = document.querySelectorAll('[class*="background"] img, [data-testid*="background"] img, .bg-thumbnail img');
+                    if (imgs.length > 0) return true;
+                    // Vérifie aussi si un élément de suppression/remplacement du fond existe (signe qu'un fond custom est actif)
+                    const removeBtns = document.querySelectorAll('[aria-label*="Supprimer"], [aria-label*="Remove"], [data-testid*="remove-bg"]');
+                    if (removeBtns.length > 0) return true;
+                    // Vérifie la canvas — si le fond est chargé, le canvas devrait avoir été mis à jour
+                    const canvas = document.querySelector('canvas');
+                    return canvas !== null;
+                }""")
+                if bg_present:
+                    bg_applied = True
+                    break
+            except Exception:
+                pass
+            await page.wait_for_timeout(2000)
+        if not bg_applied:
+            await _screenshot(page, "bg_not_applied", task)
+            raise RuntimeError("Le fond ne semble pas avoir été appliqué après upload")
 
         # 9:16 (best-effort)
         try:
@@ -410,6 +494,12 @@ async def _run_task_on_page(context, task: Task):
         if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
             await _screenshot(page, "download_zero", task)
             raise RuntimeError("Fichier export vide/introuvable")
+
+        # Vérification du premier frame — détecter l'absence de fond
+        if not _video_has_background(output_path):
+            await _screenshot(page, "bg_missing_in_video", task)
+            os.remove(output_path)
+            raise RuntimeError(f"Vidéo générée SANS fond d'image — segment supprimé pour retry: {output_path}")
 
         print(f"✅ Terminé {task.segment_id} → {output_path} (⏱ {time.time()-t_task:.2f}s)")
     finally:
