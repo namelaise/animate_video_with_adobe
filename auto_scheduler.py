@@ -18,6 +18,11 @@ from scraper_tiktok import scrape_accounts, DEFAULT_ACCOUNTS, DEFAULT_DAILY_LIMI
 # Configuration
 # ==============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Toujours utiliser le Python du venv (même si le scheduler est lancé sans activate)
+_VENV_PYTHON = os.path.join(BASE_DIR, "venv", "Scripts", "python.exe")
+PYTHON_EXE = _VENV_PYTHON if os.path.isfile(_VENV_PYTHON) else sys.executable
+
 DOWNLOAD_CANDIDATES = [
     os.path.join(BASE_DIR, 'download'),
     os.path.join(BASE_DIR, 'downloads'),
@@ -117,12 +122,12 @@ def run_main_script():
     """Lance main.py et STREAM les logs en temps réel dans la console + fichier."""
     try:
         cmd = [
-            sys.executable,
+            PYTHON_EXE,
             "-X", "utf8",
             "-u",
             os.path.join(BASE_DIR, 'main_v3.py')
         ]
-        logging.info('Lancement de main.py avec %s', sys.executable)
+        logging.info('Lancement de main.py avec %s', PYTHON_EXE)
 
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
@@ -225,7 +230,7 @@ def post_video(final_mp4, poll=True, extra_args=None, timeout=30*60):
     script = os.path.join(BASE_DIR, "post_tiktok_inbox.py")
 
     cmd = [
-        sys.executable,
+        PYTHON_EXE,
         "-X", "utf8",
         "-u",
         script,
@@ -353,6 +358,7 @@ def wait_for_internet(poll_every=5):
 # Main
 # ==============================
 if __name__ == '__main__':
+    logging.info(f"Python utilisé: {PYTHON_EXE}")
     ensure_dirs()
 
     # Scraping initial au demarrage (rattrapage si PC etait eteint)
