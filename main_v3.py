@@ -43,15 +43,16 @@ load_dotenv()
 LOG_DIR = Path("./logs")
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s: %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(LOG_DIR / "pipeline.log", encoding="utf-8")
-    ]
-)
 log = logging.getLogger("pipeline")
+log.setLevel(logging.INFO)
+_fmt = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
+_sh = logging.StreamHandler(sys.stdout)
+_sh.setFormatter(_fmt)
+_fh = logging.FileHandler(LOG_DIR / "pipeline.log", encoding="utf-8")
+_fh.setFormatter(_fmt)
+log.addHandler(_sh)
+log.addHandler(_fh)
+log.propagate = False
 
 # Logger d'audit generation — fichier separe pour analyse des decalages
 audit = logging.getLogger("generation_audit")
