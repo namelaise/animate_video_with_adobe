@@ -349,6 +349,30 @@ def stash_unposted_videos(
     return dest_dir
 
 
+def _detect_token_issue(blob: str) -> bool:
+    blob_low = blob.lower()
+    return (
+        "access_token_invalid" in blob_low
+        or "http 401" in blob_low
+        or "unauthorized" in blob_low
+    )
+
+
+def _refresh_token_ok(python_exe: str, log_path: Path) -> bool:
+    """Lance auth_tiktok_refresh.py et retourne True si le refresh a réussi."""
+    rc, out, err = run_cmd_capture([python_exe, "auth_tiktok_refresh.py"], log_path)
+    if rc != 0:
+        blob = (out + "\n" + err).lower()
+        if "refresh" in blob and ("expir" in blob or "invalid" in blob or "introuvable" in blob):
+            log.error("⛔ Le refresh_token est expiré/invalide — une ré-authentification manuelle est nécessaire "
+                      "(lance auth_tiktok_token_manager.py)")
+        else:
+            log.error(f"⛔ auth_tiktok_refresh.py a échoué (code={rc}). Voir {log_path}")
+        return False
+    log.info("🔄 Token TikTok rafraîchi avec succès")
+    return True
+
+
 def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable, caption: str = None) -> Tuple[bool, str]:
     log_path = LOG_DIR / "upload_tiktok.log"
     preflight_mp4_checks(final_mp4)
@@ -359,27 +383,23 @@ def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable
             cmd.extend(["--direct", "--caption", caption])
         return run_cmd_capture(cmd, log_path)
 
+    # --- Tentative 1
     rc, out, err = _post()
     if rc == 0:
         log.info("📤 Upload TikTok OK (1er essai)")
         return True, "ok"
 
     blob = (out + "\n" + err)
-    blob_low = blob.lower()
 
     if _contains_spam_risk(blob):
         log.error(f"🚫 Upload TikTok refusé (spam risk): {TIKTOK_SPAM_RISK_KEY}")
         return False, "spam_risk"
 
-    token_issue = (
-        "access_token_invalid" in blob_low
-        or "http 401" in blob_low
-        or "unauthorized" in blob_low
-    )
-
-    if token_issue:
+    # --- Tentative 2 : refresh + retry
+    if _detect_token_issue(blob):
         log.warning("🔐 Token TikTok possiblement invalide → rafraîchissement…")
-        _ = run_cmd_capture([python_exe, "auth_tiktok_refresh.py"], log_path)
+        if not _refresh_token_ok(python_exe, log_path):
+            return False, "token_failed"
         rc2, out2, err2 = _post()
         if rc2 == 0:
             log.info("📤 Upload TikTok OK après refresh token")
@@ -388,10 +408,25 @@ def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable
         if _contains_spam_risk(blob2):
             log.error(f"🚫 Upload TikTok refusé après retry (spam risk): {TIKTOK_SPAM_RISK_KEY}")
             return False, "spam_risk"
+        if _detect_token_issue(blob2):
+            log.error("⛔ Token TikTok toujours invalide après refresh — ré-authentification manuelle requise "
+                      "(lance auth_tiktok_token_manager.py)")
+            return False, "token_failed"
         log.error("❌ Upload TikTok encore en échec après refresh. Voir logs/upload_tiktok.log")
         return False, "token_failed"
 
-    log.error("❌ Upload TikTok échoué (pas un problème de token). Voir logs/upload_tiktok.log")
+    # --- Tentative 3 : erreur non-token — on tente un refresh au cas où + retry
+    log.warning("❌ Upload TikTok échoué (erreur inconnue). Tentative refresh + retry…")
+    _refresh_token_ok(python_exe, log_path)
+    rc3, out3, err3 = _post()
+    if rc3 == 0:
+        log.info("📤 Upload TikTok OK après retry (erreur transitoire)")
+        return True, "ok"
+    blob3 = (out3 + "\n" + err3)
+    if _contains_spam_risk(blob3):
+        log.error(f"🚫 Upload TikTok refusé (spam risk): {TIKTOK_SPAM_RISK_KEY}")
+        return False, "spam_risk"
+    log.error("❌ Upload TikTok échoué après 2 tentatives. Voir logs/upload_tiktok.log")
     return False, "other_failed"
 
 
@@ -1212,7 +1247,8 @@ def run_pipeline_once() -> Tuple[bool, str]:
         # Generer la description TikTok a partir de la transcription
         caption = generate_tiktok_description(ALIGNED_SEGMENTS_PATH)
 
-        run_cmd_capture([sys.executable, "auth_tiktok_refresh.py"], LOG_DIR / "upload_tiktok.log")
+        if not _refresh_token_ok(sys.executable, LOG_DIR / "upload_tiktok.log"):
+            log.warning("⚠️ Refresh pré-upload échoué — tentative d'upload quand même (le token actuel est peut-être encore valide)")
 
         final_mp4 = VIDEO_FINALE_PATH
         wait_for_internet(label="Post TikTok")
@@ -1228,19 +1264,17 @@ def run_pipeline_once() -> Tuple[bool, str]:
             print("\n✅ Traitement terminé.")
             return True, "posted"
 
-        if reason == "spam_risk":
-            log.warning("⚠️ Spam risk détecté -> stockage des vidéos non postées (pending_posts) puis reprise.")
-            stash_unposted_videos(
-                base_dir=BASE_DIR,
-                raw_video_path=RAW_VIDEO_PATH,
-                final_video_path=VIDEO_FINALE_PATH,
-                reason=TIKTOK_SPAM_RISK_KEY
-            )
-            with time_step("11) Nettoyage après spam risk (sans arrêter)"):
-                delete_outputs()
-            return False, "spam_risk_stashed"
-
-        raise RuntimeError(f"Upload TikTok a échoué (reason={reason}) — consulte logs/upload_tiktok.log")
+        # Stasher la vidéo pour tout type d'échec (spam, token, erreur inconnue)
+        log.warning(f"⚠️ Upload TikTok échoué (reason={reason}) -> stockage dans pending_posts puis reprise.")
+        stash_unposted_videos(
+            base_dir=BASE_DIR,
+            raw_video_path=RAW_VIDEO_PATH,
+            final_video_path=VIDEO_FINALE_PATH,
+            reason=reason
+        )
+        with time_step(f"11) Nettoyage après échec TikTok ({reason})"):
+            delete_outputs()
+        return False, f"{reason}_stashed"
 
 
 def main():
@@ -1250,7 +1284,8 @@ def main():
             if done and status == "posted":
                 break
 
-            if status == "spam_risk_stashed":
+            if status and status.endswith("_stashed"):
+                log.info(f"📦 Vidéo stashée ({status}), passage à la vidéo suivante…")
                 continue
 
         except openai.RateLimitError as e:
