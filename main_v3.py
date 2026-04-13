@@ -349,8 +349,14 @@ def stash_unposted_videos(
     return dest_dir
 
 
+def _detect_scope_not_authorized(blob: str) -> bool:
+    return "scope_not_authorized" in blob.lower()
+
+
 def _detect_token_issue(blob: str) -> bool:
     blob_low = blob.lower()
+    if "scope_not_authorized" in blob_low:
+        return False  # pas un problème de token, c'est un problème de scope
     return (
         "access_token_invalid" in blob_low
         or "http 401" in blob_low
@@ -377,19 +383,29 @@ def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable
     log_path = LOG_DIR / "upload_tiktok.log"
     preflight_mp4_checks(final_mp4)
 
-    def _post():
+    def _post(direct: bool = True):
         cmd = [python_exe, "post_tiktok_inbox.py", "--video", final_mp4, "--poll"]
-        if caption:
+        if direct and caption:
             cmd.extend(["--direct", "--caption", caption])
         return run_cmd_capture(cmd, log_path)
 
-    # --- Tentative 1
-    rc, out, err = _post()
+    # --- Tentative 1 (DIRECT si caption)
+    rc, out, err = _post(direct=bool(caption))
     if rc == 0:
         log.info("📤 Upload TikTok OK (1er essai)")
         return True, "ok"
 
     blob = (out + "\n" + err)
+
+    # --- scope_not_authorized → fallback INBOX (scope video.publish non approuvé)
+    if _detect_scope_not_authorized(blob):
+        log.warning("⚠️ scope video.publish non autorisé → fallback en mode INBOX (brouillon)")
+        rc_fb, out_fb, err_fb = _post(direct=False)
+        if rc_fb == 0:
+            log.info("📤 Upload TikTok OK en mode INBOX (fallback)")
+            return True, "ok_inbox_fallback"
+        log.error("❌ Upload TikTok échoué même en mode INBOX. Voir logs/upload_tiktok.log")
+        return False, "other_failed"
 
     if _contains_spam_risk(blob):
         log.error(f"🚫 Upload TikTok refusé (spam risk): {TIKTOK_SPAM_RISK_KEY}")
@@ -400,11 +416,17 @@ def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable
         log.warning("🔐 Token TikTok possiblement invalide → rafraîchissement…")
         if not _refresh_token_ok(python_exe, log_path):
             return False, "token_failed"
-        rc2, out2, err2 = _post()
+        rc2, out2, err2 = _post(direct=bool(caption))
         if rc2 == 0:
             log.info("📤 Upload TikTok OK après refresh token")
             return True, "ok"
         blob2 = (out2 + "\n" + err2)
+        if _detect_scope_not_authorized(blob2):
+            log.warning("⚠️ scope video.publish non autorisé après refresh → fallback INBOX")
+            rc_fb2, _, _ = _post(direct=False)
+            if rc_fb2 == 0:
+                log.info("📤 Upload TikTok OK en mode INBOX (fallback après refresh)")
+                return True, "ok_inbox_fallback"
         if _contains_spam_risk(blob2):
             log.error(f"🚫 Upload TikTok refusé après retry (spam risk): {TIKTOK_SPAM_RISK_KEY}")
             return False, "spam_risk"
@@ -418,7 +440,7 @@ def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable
     # --- Tentative 3 : erreur non-token — on tente un refresh au cas où + retry
     log.warning("❌ Upload TikTok échoué (erreur inconnue). Tentative refresh + retry…")
     _refresh_token_ok(python_exe, log_path)
-    rc3, out3, err3 = _post()
+    rc3, out3, err3 = _post(direct=bool(caption))
     if rc3 == 0:
         log.info("📤 Upload TikTok OK après retry (erreur transitoire)")
         return True, "ok"

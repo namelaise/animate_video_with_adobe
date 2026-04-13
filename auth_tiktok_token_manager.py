@@ -12,7 +12,7 @@ load_dotenv()
 CLIENT_KEY    = (os.getenv("TIKTOK_CLIENT_KEY") or "").strip()
 CLIENT_SECRET = (os.getenv("TIKTOK_CLIENT_SECRET") or "").strip()
 REDIRECT_URI  = (os.getenv("TIKTOK_REDIRECT_URI") or "http://127.0.0.1:53682/callback").strip()
-SCOPES        = (os.getenv("TIKTOK_SCOPES") or "user.info.basic,video.upload").strip()
+SCOPES        = (os.getenv("TIKTOK_SCOPES") or "user.info.basic,video.upload,video.publish").strip()
 
 # Optionnel: forcer le chemin de Firefox (Windows)
 FIREFOX_PATH  = (os.getenv("FIREFOX_PATH") or "").strip()  # ex: C:\Program Files\Mozilla Firefox\firefox.exe
@@ -191,6 +191,9 @@ def main():
     # Met à jour .env
     update_env_file("TIKTOK_USER_ACCESS_TOKEN", access_token)
     log("TIKTOK_USER_ACCESS_TOKEN mis à jour dans .env")
+    if refresh_token:
+        update_env_file("TIKTOK_USER_REFRESH_TOKEN", refresh_token)
+        log("TIKTOK_USER_REFRESH_TOKEN mis à jour dans .env")
 
     print("\nOK. Tu peux lancer:")
     print("python main.py --post-draft --draft-poll")

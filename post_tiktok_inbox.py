@@ -22,6 +22,7 @@ load_dotenv()
 API_INIT_INBOX  = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
 API_INIT_DIRECT = "https://open.tiktokapis.com/v2/post/publish/video/init/"
 API_STATUS      = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
+API_CREATOR_INFO = "https://open.tiktokapis.com/v2/post/publish/creator_info/query/"
 
 MIB        = 1024 * 1024
 MIN_CHUNK  = 5  * MIB     # 5 MiB
@@ -34,6 +35,10 @@ def err(s):  print("[ERR]", s, flush=True)
 
 class AccessTokenInvalid(Exception):
     """Le token d'accès est invalide ou manquant dans la requête."""
+    pass
+
+class ScopeNotAuthorized(Exception):
+    """Le scope requis (video.publish) n'a pas été autorisé par l'utilisateur."""
     pass
 
 def human_bytes(n: int) -> str:
@@ -98,42 +103,69 @@ def compute_plan_with_override(total_size: int, chunk_mib: int) -> tuple[int,int
 
     return chunk_size, total_parts
 
-def build_post_info(args) -> dict | None:
+def build_post_info(args, creator_info: dict | None = None) -> dict | None:
     """
     Construit le bloc post_info pour un POST DIRECT.
-    Champs supportés (noms API) :
-      - privacy_level: PUBLIC_TO_EVERYONE | MUTUAL_FOLLOW_FRIENDS | FOLLOWER_OF_CREATOR | SELF_ONLY
-      - title
-      - disable_duet, disable_stitch, disable_comment
-      - video_cover_timestamp_ms
+    Valide le privacy_level contre les options retournées par creator_info (obligatoire).
     """
     if not args.direct:
         return None
+
+    privacy = args.privacy
+    if creator_info:
+        allowed = creator_info.get("privacy_level_options", [])
+        if allowed and privacy not in allowed:
+            log(f"Privacy '{privacy}' non disponible pour ce compte (options: {allowed}), fallback sur '{allowed[0]}'")
+            privacy = allowed[0]
+
     pi: dict = {
-        "privacy_level": args.privacy,
+        "privacy_level": privacy,
     }
     if args.caption:
-        pi["title"] = args.caption
-    if args.disable_duet:
+        pi["title"] = args.caption[:2200]  # max 2200 UTF-16 runes
+    if args.disable_duet or (creator_info and creator_info.get("duet_disabled")):
         pi["disable_duet"] = True
-    if args.disable_stitch:
+    if args.disable_stitch or (creator_info and creator_info.get("stitch_disabled")):
         pi["disable_stitch"] = True
-    if args.disable_comment:
+    if args.disable_comment or (creator_info and creator_info.get("comment_disabled")):
         pi["disable_comment"] = True
     if args.cover_ms is not None:
         pi["video_cover_timestamp_ms"] = args.cover_ms
     return pi
 
 def _raise_if_token_invalid(resp: requests.Response):
-    # TikTok renvoie HTTP 401 + {"error":{"code":"access_token_invalid", ...}}
+    # TikTok renvoie HTTP 401 + {"error":{"code":"access_token_invalid"|"scope_not_authorized", ...}}
     if resp.status_code == 401:
         try:
             j = resp.json()
         except Exception:
             j = {}
         code = ((j.get("error") or {}).get("code") or "").lower()
+        if "scope_not_authorized" in code:
+            raise ScopeNotAuthorized(resp.text)
         if "access_token_invalid" in code or "access token" in (j.get("error", {}).get("message","").lower()):
             raise AccessTokenInvalid(resp.text)
+
+
+def query_creator_info(token: str) -> dict:
+    """
+    Appelle /v2/post/publish/creator_info/query/ (obligatoire avant chaque post DIRECT).
+    Retourne les infos du créateur : privacy_level_options, max_video_post_duration_sec, etc.
+    """
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=UTF-8",
+    }
+    r = requests.post(API_CREATOR_INFO, headers=headers, json={}, timeout=30)
+    _raise_if_token_invalid(r)
+    if r.status_code != 200:
+        err(f"creator_info HTTP {r.status_code}: {r.text}")
+        raise SystemExit(1)
+    data = r.json().get("data", {})
+    log(f"Creator: @{data.get('creator_username', '?')} — "
+        f"privacy={data.get('privacy_level_options', [])}, "
+        f"max_duration={data.get('max_video_post_duration_sec', '?')}s")
+    return data
 
 def init_file_upload(token: str,
                      video_size: int,
@@ -293,7 +325,29 @@ def main():
 
     log(f"Fichier: {video_path.name} ({human_bytes(total_size)}), chunk={human_bytes(chunk_size)}, parts={total_parts}")
 
-    post_info = build_post_info(args)
+    # 0) Query creator_info (obligatoire avant chaque post DIRECT, exigé par TikTok pour l'audit)
+    creator_info = None
+    if args.direct:
+        try:
+            creator_info = query_creator_info(token)
+            max_dur = creator_info.get("max_video_post_duration_sec", 0)
+            if max_dur and total_size > 0:
+                # Vérification informative de la durée (on n'a pas la durée exacte ici)
+                log(f"Durée max autorisée par le créateur: {max_dur}s")
+        except ScopeNotAuthorized:
+            err("scope video.publish non autorisé — relance auth_tiktok_token_manager.py avec le nouveau scope")
+            raise SystemExit(2)
+        except AccessTokenInvalid:
+            log("Token expiré lors de creator_info, refresh en cours...")
+            try:
+                subprocess.run([sys.executable, "auth_tiktok_refresh.py"], check=True)
+            except subprocess.CalledProcessError as sube:
+                raise SystemExit(f"[ERR] Échec refresh: {sube}") from sube
+            load_dotenv(override=True)
+            token = ensure_token()
+            creator_info = query_creator_info(token)
+
+    post_info = build_post_info(args, creator_info=creator_info)
 
     # 1) INIT (INBOX vs DIRECT) — avec auto refresh token si 401/access_token_invalid
     try:
@@ -302,10 +356,12 @@ def main():
             direct=args.direct,
             post_info=post_info
         )
+    except ScopeNotAuthorized:
+        err("scope video.publish non autorisé — relance auth_tiktok_token_manager.py avec le nouveau scope")
+        raise SystemExit(2)
     except AccessTokenInvalid as e:
         err("Token invalide/expiré détecté à l'INIT. Lancement de auth_refreshtoken.py…")
         try:
-            # Utilise le même interpréteur Python actif
             subprocess.run([sys.executable, "auth_tiktok_refresh.py"], check=True)
         except subprocess.CalledProcessError as sube:
             raise SystemExit(f"[ERR] Échec auth_refreshtoken.py: {sube}") from sube
