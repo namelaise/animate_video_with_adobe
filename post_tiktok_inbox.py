@@ -134,14 +134,14 @@ def build_post_info(args, creator_info: dict | None = None) -> dict | None:
     return pi
 
 def _raise_if_token_invalid(resp: requests.Response):
-    # TikTok renvoie HTTP 401 + {"error":{"code":"access_token_invalid"|"scope_not_authorized", ...}}
-    if resp.status_code == 401:
+    # TikTok renvoie HTTP 401/403 avec divers codes d'erreur
+    if resp.status_code in (401, 403):
         try:
             j = resp.json()
         except Exception:
             j = {}
         code = ((j.get("error") or {}).get("code") or "").lower()
-        if "scope_not_authorized" in code:
+        if "scope_not_authorized" in code or "unaudited_client" in code:
             raise ScopeNotAuthorized(resp.text)
         if "access_token_invalid" in code or "access token" in (j.get("error", {}).get("message","").lower()):
             raise AccessTokenInvalid(resp.text)
