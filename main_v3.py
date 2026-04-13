@@ -350,7 +350,8 @@ def stash_unposted_videos(
 
 
 def _detect_scope_not_authorized(blob: str) -> bool:
-    return "scope_not_authorized" in blob.lower()
+    blob_low = blob.lower()
+    return "scope_not_authorized" in blob_low or "unaudited_client" in blob_low
 
 
 def _detect_token_issue(blob: str) -> bool:
