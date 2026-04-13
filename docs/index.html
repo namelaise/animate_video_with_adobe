@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mr Martin - Automated TikTok Video Creator</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a1a; line-height: 1.6; }
+    .container { max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+    h1 { font-size: 2.2rem; margin-bottom: 8px; }
+    .subtitle { color: #666; font-size: 1.1rem; margin-bottom: 40px; }
+    h2 { font-size: 1.4rem; margin: 32px 0 12px; }
+    p, li { font-size: 1rem; margin-bottom: 8px; }
+    ul { padding-left: 24px; margin-bottom: 16px; }
+    .links { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e0e0e0; }
+    .links a { color: #0066cc; text-decoration: none; margin-right: 24px; }
+    .links a:hover { text-decoration: underline; }
+    footer { margin-top: 60px; color: #999; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Mr Martin</h1>
+    <p class="subtitle">Automated TikTok Video Creator &amp; Publisher</p>
+
+    <h2>About</h2>
+    <p>Mr Martin is a desktop application that automates the creation and publication of animated videos on TikTok. The application processes existing video content, generates animations, and publishes them directly to TikTok using the Content Posting API.</p>
+
+    <h2>Features</h2>
+    <ul>
+      <li>Automated video download and processing</li>
+      <li>Audio transcription with speaker diarization</li>
+      <li>AI-powered script rewriting and caption generation</li>
+      <li>Animated video generation via Adobe After Effects</li>
+      <li>Direct publishing to TikTok with captions</li>
+      <li>Respects creator privacy settings and interaction preferences</li>
+    </ul>
+
+    <h2>How it works</h2>
+    <p>The application authenticates with TikTok via OAuth (Login Kit) using a local redirect URI. Before each post, it queries the creator's account settings to ensure compliance with their privacy preferences. Videos are posted directly to the creator's profile with auto-generated captions, or sent to the inbox as drafts when direct posting is unavailable.</p>
+
+    <h2>TikTok Integration</h2>
+    <ul>
+      <li><strong>Login Kit</strong> &mdash; OAuth authentication with PKCE</li>
+      <li><strong>Content Posting API</strong> &mdash; Direct post (video.publish) and inbox upload (video.upload)</li>
+      <li><strong>Creator Info Query</strong> &mdash; Retrieves privacy levels and interaction settings before each post</li>
+    </ul>
+
+    <div class="links">
+      <a href="tos.html">Terms of Service</a>
+      <a href="privacy.html">Privacy Policy</a>
+    </div>
+
+    <footer>
+      <p>&copy; 2026 Mr Martin. All rights reserved.</p>
+    </footer>
+  </div>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - Mr Martin</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a1a; line-height: 1.6; }
+    .container { max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+    h1 { font-size: 2rem; margin-bottom: 8px; }
+    .date { color: #666; margin-bottom: 32px; }
+    h2 { font-size: 1.2rem; margin: 24px 0 8px; }
+    p { margin-bottom: 12px; }
+    a { color: #0066cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    footer { margin-top: 60px; color: #999; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Privacy Policy</h1>
+    <p class="date">Last updated: April 13, 2026</p>
+
+    <h2>1. Introduction</h2>
+    <p>This Privacy Policy explains how the Mr Martin application ("the App") collects, uses, and protects your information.</p>
+
+    <h2>2. Information We Collect</h2>
+    <p>The App collects only the minimum information necessary to function:</p>
+    <p>- <strong>TikTok OAuth tokens</strong>: access token and refresh token, stored locally on your computer in the <code>.env</code> file and <code>config/tiktok_tokens.json</code>.<br>
+       - <strong>Basic TikTok profile information</strong>: display name and avatar URL, retrieved via the TikTok API to verify your identity.<br>
+       - <strong>Creator account settings</strong>: privacy level options and interaction preferences, queried before each post to ensure compliance.</p>
+
+    <h2>3. How We Use Your Information</h2>
+    <p>Your information is used exclusively to:</p>
+    <p>- Authenticate with the TikTok API on your behalf<br>
+       - Publish videos to your TikTok account<br>
+       - Respect your account's privacy and interaction settings when posting</p>
+
+    <h2>4. Data Storage</h2>
+    <p>All data is stored locally on your computer. The App does not transmit your personal data to any server other than TikTok's official API endpoints. No data is stored in the cloud or shared with third parties.</p>
+
+    <h2>5. Third-Party Services</h2>
+    <p>The App interacts with the following third-party services:</p>
+    <p>- <strong>TikTok Content Posting API</strong>: to publish videos and query account settings<br>
+       - <strong>TikTok Login Kit</strong>: for OAuth authentication<br>
+       - <strong>AssemblyAI</strong>: for audio transcription (audio files are sent to their API for processing)<br>
+       - <strong>OpenAI</strong>: for AI-powered text generation (text data is sent to their API)</p>
+    <p>Each third-party service is governed by its own privacy policy.</p>
+
+    <h2>6. Data Retention</h2>
+    <p>OAuth tokens are stored locally until you revoke access or delete them. Video files and transcriptions are processed locally and can be deleted at any time by the user.</p>
+
+    <h2>7. Your Rights</h2>
+    <p>You can at any time:</p>
+    <p>- Revoke the App's access to your TikTok account via TikTok's settings<br>
+       - Delete all locally stored tokens and data<br>
+       - Uninstall the App entirely</p>
+
+    <h2>8. Data Security</h2>
+    <p>OAuth tokens are stored in local configuration files on your machine. We recommend keeping your computer secure and not sharing these files.</p>
+
+    <h2>9. Children's Privacy</h2>
+    <p>The App is not intended for use by anyone under the age of 18.</p>
+
+    <h2>10. Changes to This Policy</h2>
+    <p>We may update this Privacy Policy from time to time. Changes will be posted on this page with an updated date.</p>
+
+    <h2>11. Contact</h2>
+    <p>For questions about this Privacy Policy, please contact us via <a href="https://github.com/namelaise/mr-martin-app">GitHub</a>.</p>
+
+    <p><a href="index.html">&larr; Back to homepage</a></p>
+
+    <footer>
+      <p>&copy; 2026 Mr Martin. All rights reserved.</p>
+    </footer>
+  </div>
+</body>
+</html>
