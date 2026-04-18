@@ -484,7 +484,7 @@ async def _run_task_on_page(context, task: Task):
             pass
 
 # --- Orchestrateur principal (1 navigateur, N pages)
-async def run_pool(tasks: List[Task], concurrency: int = 4):
+async def run_pool(tasks: List[Task], concurrency: int = 4, on_progress=None):
     if os.path.exists(TEMP_PROFILE_PATH):
         shutil.rmtree(TEMP_PROFILE_PATH, ignore_errors=True)
     Path(os.path.dirname(TEMP_PROFILE_PATH)).mkdir(parents=True, exist_ok=True)
@@ -508,16 +508,23 @@ async def run_pool(tasks: List[Task], concurrency: int = 4):
             ],
         )
         sem = asyncio.Semaphore(max(1, concurrency))
+        _done = {"count": 0}
 
         async def guarded(task: Task):
             for attempt in range(1, MAX_RETRIES_TASK + 1):
                 async with sem:
                     try:
                         await _run_task_on_page(context, task)
+                        _done["count"] += 1
+                        if on_progress:
+                            on_progress(_done["count"], len(tasks))
                         return
                     except Exception as e:
                         print(f"❌ {task.segment_id} essai {attempt}/{MAX_RETRIES_TASK} : {e}")
                         await asyncio.sleep(min(2*attempt, 6))
+            _done["count"] += 1
+            if on_progress:
+                on_progress(_done["count"], len(tasks))
             print(f"⛔ Abandon {task.segment_id} après {MAX_RETRIES_TASK} échecs")
 
         try:

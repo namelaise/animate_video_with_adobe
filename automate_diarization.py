@@ -4,10 +4,13 @@
 
 import os
 import json
+import logging
 import subprocess
 import shutil
 import assemblyai as aai
 from typing import List, Dict, Any
+
+log = logging.getLogger("pipeline")
 
 # ---------- Utils ----------
 
@@ -82,9 +85,9 @@ def transcribe_segments_with_diarization(
     # --- Durée audio réelle (pour vérifier la fin couverte) ---
     audio_len = ffprobe_duration_seconds(audio_path)
     if audio_len > 0:
-        print(f"ℹ️ Durée audio (ffprobe): {hms(audio_len)} ({audio_len:.3f}s)")
+        log.info("Duree audio (ffprobe): %s (%.3fs)", hms(audio_len), audio_len)
     else:
-        print("ℹ️ Durée audio non disponible (ffprobe introuvable ou échec).")
+        log.info("Duree audio non disponible (ffprobe introuvable ou echec).")
 
     # --- Config AAI (diarisation ON) ---
     # Notes:
@@ -111,7 +114,7 @@ def transcribe_segments_with_diarization(
         raise RuntimeError(f"Transcription failed: {tr.error}")
 
     full_text = (tr.text or "").strip()
-    print(f"ℹ️ AAI: status={tr.status}, texte={len(full_text)} chars")
+    log.info("AAI: status=%s, texte=%d chars", tr.status, len(full_text))
 
     # --- Utterances -> segments ---
     segments = []
@@ -137,7 +140,7 @@ def transcribe_segments_with_diarization(
         last_end = segments[-1]["end"]
         tail_gap = audio_len - last_end
         if tail_gap > min_gap_for_blank:
-            print(f"⚠️ Diarisation s'arrête avant la fin: last_end={hms(last_end)} ; fin audio={hms(audio_len)} ; gap={tail_gap:.3f}s")
+            log.warning("Diarisation s'arrete avant la fin: last_end=%s ; fin audio=%s ; gap=%.3fs", hms(last_end), hms(audio_len), tail_gap)
             segments.append({
                 "start": last_end,
                 "end": audio_len,
@@ -199,14 +202,8 @@ def transcribe_segments_with_diarization(
 
     # --- Logs finaux utiles ---
     last_end_overall = max((s["end"] for s in segments), default=0.0)
-    print("✅ Fichiers générés :")
-    print(" -", path_full)
-    print(" -", path_json)
-    print(" -", path_txt)
-    print(" -", path_txt_with_blanks)
-    print(" -", path_blanks)
-    print(" -", path_spk)
-    print(f"⏱️ Couverture diarisation: last_end={hms(last_end_overall)} ; fin audio={hms(audio_len)} ; Δ={audio_len - last_end_overall:+.3f}s")
+    log.info("Fichiers generes: %s | %s | %s | %s | %s | %s", path_full, path_json, path_txt, path_txt_with_blanks, path_blanks, path_spk)
+    log.info("Couverture diarisation: last_end=%s ; fin audio=%s ; delta=%.3fs", hms(last_end_overall), hms(audio_len), audio_len - last_end_overall)
 
     return path_json, path_spk, path_txt, path_full, segments
 

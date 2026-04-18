@@ -26,7 +26,7 @@ from tqdm import tqdm
 from openai import OpenAI
 import openai
 
-from automate_adobe_with_bg import Task, run_pool
+from automate_adobe_with_bg import Task, run_pool, _safe_filename
 from assemble_guarded import assemble_from_tail_with_transcript
 from segments_processing import (
     rewrite_transcript_with_intervenants_gpt,
@@ -45,10 +45,10 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 log = logging.getLogger("pipeline")
 log.setLevel(logging.INFO)
-_fmt = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
+_fmt = logging.Formatter('[%(asctime)s] %(levelname)-8s [%(name)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 _sh = logging.StreamHandler(sys.stdout)
 _sh.setFormatter(_fmt)
-_fh = logging.FileHandler(LOG_DIR / "pipeline.log", encoding="utf-8")
+_fh = logging.FileHandler(LOG_DIR / "pipeline.log", mode="w", encoding="utf-8")
 _fh.setFormatter(_fmt)
 log.addHandler(_sh)
 log.addHandler(_fh)
@@ -63,13 +63,17 @@ audit.addHandler(_audit_handler)
 audit.propagate = False  # pas dans les logs standard
 
 # stdout utf-8 (Windows)
+# NE PAS remplacer sys.stdout par un nouveau TextIOWrapper si reconfigure() echoue :
+# cela creerait deux wrappers sur le meme buffer binaire → corruptions + OSError sur print().
 if os.name == "nt":
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    try:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+        pass
 
 
 @contextmanager
@@ -122,6 +126,16 @@ RAW_VIDEO_PATH = os.getenv(
     os.path.join(BASE_DIR, "Download.mp4") if BASE_DIR else "Download.mp4"
 )
 
+# ── Matching IPC (GUI ↔ pipeline) ─────────────────────────────────────────────
+_base_path              = Path(BASE_DIR) if BASE_DIR else Path(__file__).parent
+MATCHING_MODE_FILE      = _base_path / "matching_mode.json"
+MATCHING_REQUEST_FILE   = _base_path / "matching_request.json"
+MATCHING_RESPONSE_FILE  = _base_path / "matching_response.json"
+MATCHING_TIMEOUT_S      = 65   # GUI timeout = 60s + 5s marge
+
+# ── Pipeline state (reprise après crash) ──────────────────────────────────────
+PIPELINE_STATE_FILE = str(_base_path / "pipeline_state.json")
+
 RAW_AUDIO_DIR = os.path.join(BASE_DIR, "audio")
 AUDIO_SEGMENTS_DIR = os.path.join(BASE_DIR, "audio_segments")
 VIDEO_SEGMENTS_DIR = os.path.join(BASE_DIR, "video_segments")
@@ -155,8 +169,9 @@ for _folder in [
 
 if os.path.exists("automation_logs"):
     shutil.rmtree("automation_logs", ignore_errors=True)
+os.makedirs("automation_logs", exist_ok=True)
 
-# Supprime d’anciens segments audio éventuels
+# Supprime d'anciens segments audio éventuels
 for _file in os.listdir(AUDIO_SEGMENTS_DIR):
     if _file.startswith("audio_") and _file.endswith(".mp3"):
         os.remove(os.path.join(AUDIO_SEGMENTS_DIR, _file))
@@ -380,20 +395,67 @@ def _refresh_token_ok(python_exe: str, log_path: Path) -> bool:
     return True
 
 
+def _parse_publish_id(stdout: str) -> str:
+    """Extrait le publish_id du stdout de post_tiktok_inbox.py."""
+    m = re.search(r'publish_id=(\S+)', stdout)
+    return m.group(1) if m else ""
+
+
+def save_upload_entry(publish_id: str, ok: bool, reason: str):
+    """Sauvegarde une entrée dans upload_history.json pour le suivi des stats."""
+    history_path = Path(BASE_DIR) / "upload_history.json"
+    try:
+        history = json.loads(history_path.read_text(encoding="utf-8")) if history_path.exists() else []
+    except Exception:
+        history = []
+
+    # Lire le template de prompt utilisé pour cette génération
+    meta_path = Path(BASE_DIR) / "current_generation_meta.json"
+    prompt_template = "(inconnu)"
+    try:
+        if meta_path.exists():
+            prompt_template = json.loads(meta_path.read_text(encoding="utf-8")).get("prompt_template", "(inconnu)")
+    except Exception:
+        pass
+
+    entry = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "publish_id": publish_id,
+        "prompt_template": prompt_template,
+        "upload_ok": ok,
+        "reason": reason,
+        "video_id": None,         # rempli plus tard par fetch_stats.py
+        "view_count": None,
+        "like_count": None,
+        "comment_count": None,
+        "share_count": None,
+    }
+    history.append(entry)
+    history_path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+    log.info("📊 Entrée historique sauvée (template=%s, publish_id=%s)", prompt_template, publish_id or "N/A")
+
+
 def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable, caption: str = None) -> Tuple[bool, str]:
     log_path = LOG_DIR / "upload_tiktok.log"
     preflight_mp4_checks(final_mp4)
 
-    def _post(direct: bool = True):
+    # TIKTOK_DIRECT_POST=1 dans .env pour activer le post direct (nécessite video.publish approuvé)
+    use_direct = os.getenv("TIKTOK_DIRECT_POST", "0").strip() == "1"
+
+    def _post(direct: bool = False):
+        # direct=False → mode INBOX/brouillon (video.upload)
+        # direct=True  → post direct sur le profil (video.publish — approuvé en production)
         cmd = [python_exe, "post_tiktok_inbox.py", "--video", final_mp4, "--poll"]
         if direct and caption:
             cmd.extend(["--direct", "--caption", caption])
         return run_cmd_capture(cmd, log_path)
 
-    # --- Tentative 1 (DIRECT si caption)
-    rc, out, err = _post(direct=bool(caption))
+    # --- Tentative 1 : DIRECT si approuvé, sinon INBOX
+    rc, out, err = _post(direct=use_direct and bool(caption))
     if rc == 0:
-        log.info("📤 Upload TikTok OK (1er essai)")
+        mode = "DIRECT" if (use_direct and caption) else "INBOX"
+        log.info(f"📤 Upload TikTok OK ({mode})")
+        save_upload_entry(_parse_publish_id(out), ok=True, reason="ok")
         return True, "ok"
 
     blob = (out + "\n" + err)
@@ -404,6 +466,7 @@ def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable
         rc_fb, out_fb, err_fb = _post(direct=False)
         if rc_fb == 0:
             log.info("📤 Upload TikTok OK en mode INBOX (fallback)")
+            save_upload_entry(_parse_publish_id(out_fb), ok=True, reason="ok_inbox_fallback")
             return True, "ok_inbox_fallback"
         log.error("❌ Upload TikTok échoué même en mode INBOX. Voir logs/upload_tiktok.log")
         return False, "other_failed"
@@ -417,9 +480,10 @@ def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable
         log.warning("🔐 Token TikTok possiblement invalide → rafraîchissement…")
         if not _refresh_token_ok(python_exe, log_path):
             return False, "token_failed"
-        rc2, out2, err2 = _post(direct=bool(caption))
+        rc2, out2, err2 = _post(direct=use_direct and bool(caption))
         if rc2 == 0:
             log.info("📤 Upload TikTok OK après refresh token")
+            save_upload_entry(_parse_publish_id(out2), ok=True, reason="ok")
             return True, "ok"
         blob2 = (out2 + "\n" + err2)
         if _detect_scope_not_authorized(blob2):
@@ -441,9 +505,10 @@ def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable
     # --- Tentative 3 : erreur non-token — on tente un refresh au cas où + retry
     log.warning("❌ Upload TikTok échoué (erreur inconnue). Tentative refresh + retry…")
     _refresh_token_ok(python_exe, log_path)
-    rc3, out3, err3 = _post(direct=bool(caption))
+    rc3, out3, err3 = _post(direct=False)
     if rc3 == 0:
         log.info("📤 Upload TikTok OK après retry (erreur transitoire)")
+        save_upload_entry(_parse_publish_id(out3), ok=True, reason="ok")
         return True, "ok"
     blob3 = (out3 + "\n" + err3)
     if _contains_spam_risk(blob3):
@@ -590,9 +655,13 @@ def write_audio_segments_manifest(
 # =========================================================
 
 def extract_audio_from_video() -> str:
+    if not os.path.exists(RAW_VIDEO_PATH):
+        raise FileNotFoundError(f"Video source introuvable: {RAW_VIDEO_PATH}")
     cmd = f'ffmpeg -i "{RAW_VIDEO_PATH}" -q:a 0 -map a "{FULL_AUDIO_PATH}" -y'
-    subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    print(f"✅ Audio extrait : {FULL_AUDIO_PATH}")
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if result.returncode != 0 or not os.path.exists(FULL_AUDIO_PATH):
+        raise RuntimeError(f"Extraction audio echouee (code {result.returncode}): {result.stderr[:200]}")
+    log.info("Audio extrait : %s", FULL_AUDIO_PATH)
     return FULL_AUDIO_PATH
 
 
@@ -601,7 +670,7 @@ def split_full_audio(max_segment_duration_sec: int = 110) -> List[str]:
     segment_paths: List[str] = []
     total_parts = (len(audio) + max_segment_duration_sec * 1000 - 1) // (max_segment_duration_sec * 1000)
 
-    print("⏳ Découpage audio en segments...")
+    log.info("Découpage audio en segments...")
     for i in tqdm(range(total_parts), desc="Découpage", unit="segment"):
         start_ms = i * max_segment_duration_sec * 1000
         end_ms = start_ms + max_segment_duration_sec * 1000
@@ -611,7 +680,7 @@ def split_full_audio(max_segment_duration_sec: int = 110) -> List[str]:
         segment.export(path_out, format="mp3")
         segment_paths.append(path_out)
 
-    print(f"✅ Audio découpé : {len(segment_paths)} segments")
+    log.info("Audio découpé : %d segments", len(segment_paths))
     return segment_paths
 
 
@@ -624,18 +693,18 @@ def build_background_prompt(script_text: str, templates_dir: str = "prompts/back
 PROMPT IA — Décor de fond photo réaliste, strictement fidèle au script, sans personnage
 
 Objectif :
-Générer une image de décor de fond photoréaliste, crédible, moderne et détaillée, qui servira d’arrière-plan à une scène dans laquelle des personnages seront ajoutés plus tard.
-L’image doit représenter uniquement l’environnement, sans aucun personnage visible.
+Générer une image de décor de fond photoréaliste, crédible, moderne et détaillée, qui servira d'arrière-plan à une scène dans laquelle des personnages seront ajoutés plus tard.
+L'image doit représenter uniquement l'environnement, sans aucun personnage visible.
 
 Règle principale :
 - Le décor doit être strictement déterminé par le script.
-- Il faut analyser le script pour identifier le lieu réel, le contexte, l’ambiance, les objets pertinents et la disposition logique de la scène.
+- Il faut analyser le script pour identifier le lieu réel, le contexte, l'ambiance, les objets pertinents et la disposition logique de la scène.
 - Le décor doit correspondre fidèlement à ce que le script suggère ou décrit.
 - Ne pas inventer de scène absurde, symbolique, surréaliste ou fantaisiste.
-- Ne pas ajouter d’éléments incongrus non justifiés par le script.
-- En cas d’ambiguïté, choisir l’interprétation la plus réaliste, naturelle et logique.
+- Ne pas ajouter d'éléments incongrus non justifiés par le script.
+- En cas d'ambiguïté, choisir l'interprétation la plus réaliste, naturelle et logique.
 
-Type d’image attendu :
+Type d'image attendu :
 - Photo réaliste
 - Décor uniquement
 - Aucun humain
@@ -656,7 +725,7 @@ Style visuel :
 Qualité & rendu photo :
 - Niveau de détail élevé
 - Textures réalistes
-- Traces d’usage réalistes et naturelles
+- Traces d'usage réalistes et naturelles
 - Éclairage cohérent avec le lieu et le moment suggéré par le script
 - Lumière réaliste, agréable, bien exposée
 - Ombres naturelles
@@ -670,13 +739,13 @@ Qualité & rendu photo :
 
 Décor & composition :
 - Construire un lieu réaliste, logique et fidèle au script
-- L’espace doit sembler prêt à accueillir des personnages ensuite
+- L'espace doit sembler prêt à accueillir des personnages ensuite
 - Prévoir une composition claire avec une zone visuellement exploitable pour ajouter des personnages au premier plan ou au centre
 - Ajouter uniquement des objets cohérents avec le lieu et la situation
 - Le décor peut contenir des traces de présence humaine indirectes
 - Mais aucun humain ne doit apparaître
 
-Texte dans l’image :
+Texte dans l'image :
 - Ne mettre du texte visible que si cela est naturellement justifié par le lieu
 - Si texte présent : il doit être court, lisible, réaliste et intégré naturellement
 
@@ -708,6 +777,40 @@ duplicated objects, impossible reflections
     for w in banned:
         cleaned = cleaned.replace(w, "")
 
+    # ── Extraction de contexte via GPT-4o ─────────────────────────────────
+    # gpt-image-1 est un modèle image : il ne comprend pas bien 2000 mots de
+    # transcription française. On demande d'abord à GPT-4o d'extraire les
+    # éléments visuellement pertinents pour guider le modèle image.
+    scene_context = cleaned  # fallback si GPT échoue
+    try:
+        _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        _extraction = _client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{
+                "role": "system",
+                "content": (
+                    "Tu es un directeur artistique. On te donne la transcription d'un appel téléphonique "
+                    "de canular (Mr Martin). Tu dois en extraire uniquement les informations visuelles "
+                    "nécessaires pour générer un décor de fond (sans personnage). "
+                    "Réponds en anglais, en 4 lignes maximum, format :\n"
+                    "Location: [lieu précis, ex: french hospital reception desk, french tax office, car dealership showroom]\n"
+                    "Topic: [sujet de l'appel en 5 mots max, ex: fake insurance claim, unpaid invoice]\n"
+                    "Atmosphere: [ambiance en 3 mots, ex: tense and bureaucratic]\n"
+                    "Key objects: [3-5 objets typiques du lieu, ex: reception counter, waiting chairs, administrative posters]\n"
+                    "Ne mets rien d'autre."
+                )
+            }, {
+                "role": "user",
+                "content": f"Transcription (extrait) :\n{cleaned[:3000]}"
+            }],
+            max_tokens=120,
+            temperature=0.3,
+        )
+        scene_context = _extraction.choices[0].message.content.strip()
+        log.info("Contexte scene extrait par GPT-4o:\n%s", scene_context)
+    except Exception as e:
+        log.warning("Extraction contexte GPT-4o echouee, fallback sur transcription brute: %s", e)
+
     template_text = None
     chosen_name = "(default)"
     try:
@@ -724,26 +827,40 @@ duplicated objects, impossible reflections
         template_text = default_template
 
     if "{SCRIPT}" in template_text or "{{SCRIPT}}" in template_text:
-        final_prompt = template_text.replace("{SCRIPT}", cleaned).replace("{{SCRIPT}}", cleaned)
+        final_prompt = template_text.replace("{SCRIPT}", scene_context).replace("{{SCRIPT}}", scene_context)
     else:
-        final_prompt = f"{template_text}\n\n{cleaned}"
+        final_prompt = f"{template_text}\n\n{scene_context}"
 
     Path(IMAGES_DIR).mkdir(parents=True, exist_ok=True)
     prompt_path = Path(IMAGES_DIR) / "prompt.txt"
     prompt_path.write_text(final_prompt, encoding="utf-8")
 
-    print(f"✅ Prompt image généré (template: {chosen_name}) → {prompt_path}")
+    # Persistance du template choisi pour l'historique d'upload
+    meta_path = Path(BASE_DIR) / "current_generation_meta.json"
+    try:
+        meta_path.write_text(
+            json.dumps({"prompt_template": chosen_name}, ensure_ascii=False),
+            encoding="utf-8"
+        )
+    except Exception:
+        pass
+
+    log.info("Prompt image généré (template: %s) → %s", chosen_name, prompt_path)
     return final_prompt
 
 
-def generate_image_with_openai(script_text: str) -> str | None:
+class ModerationRejectedError(RuntimeError):
+    """Levée quand OpenAI refuse le prompt pour violation de contenu."""
+
+
+def generate_image_with_openai(script_text: str) -> str:
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     output_image_path = os.path.join(IMAGES_DIR, "full_background.png")
 
     prompt_text = build_background_prompt(script_text)
 
     try:
-        print("⏳ Génération de l'image via OpenAI...")
+        log.info("Generation image OpenAI...")
         resp = client.images.generate(
             model="gpt-image-1",
             prompt=prompt_text,
@@ -754,12 +871,15 @@ def generate_image_with_openai(script_text: str) -> str | None:
         image_b64 = resp.data[0].b64_json
         with open(output_image_path, "wb") as f:
             f.write(base64.b64decode(image_b64))
-
-        print(f"✅ Image générée : {output_image_path}")
+        log.info("Image generee : %s", output_image_path)
         return output_image_path
     except Exception as e:
-        print(f"❌ Génération image échouée : {e}")
-        return None
+        err_str = str(e)
+        if "moderation" in err_str.lower() or "safety" in err_str.lower() or "rejected" in err_str.lower():
+            log.error("Image bloquee par moderation OpenAI — video mise de cote. Raison: %s", e)
+            raise ModerationRejectedError(str(e)) from e
+        log.error("Generation image echouee : %s", e)
+        raise
 
 
 def center_crop_to_ratio(img: Image.Image, target_ratio: float) -> Image.Image:
@@ -795,7 +915,7 @@ def split_background_to_tiktok_pairs() -> Tuple[str, str]:
     left_img.save(left_path, format="PNG", optimize=True)
     right_img.save(right_path, format="PNG", optimize=True)
 
-    print("✅ Deux images 9:16 générées (gauche/droite) avec crop propre.")
+    log.info("Deux images 9:16 générées (gauche/droite) avec crop propre.")
     return left_path, right_path
 
 
@@ -804,6 +924,70 @@ def split_background_to_tiktok_pairs() -> Tuple[str, str]:
 # =========================================================
 
 LABEL_TO_PUPPET_CACHE: Dict[str, str] = {}
+
+
+def _ask_matching_or_random(speaker_label: str, genre: str, pool: List[str]) -> str:
+    """
+    Choisit un puppet selon le mode de matching configuré dans matching_mode.json.
+    Si mode=manual, pause le pipeline et attend la réponse du GUI (timeout 65s).
+    """
+    mode = "auto"
+    try:
+        if MATCHING_MODE_FILE.exists():
+            mode = json.loads(MATCHING_MODE_FILE.read_text(encoding="utf-8")).get("mode", "auto")
+    except Exception:
+        pass
+
+    if mode != "manual" or not pool:
+        return random.choice(pool) if pool else "Default VQA.puppet-button"
+
+    log.info(f"🎭 Matching manuel requis pour «{speaker_label}» ({genre}) — GUI en attente…")
+
+    # Nettoyer toute réponse précédente
+    try:
+        MATCHING_RESPONSE_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+    try:
+        MATCHING_REQUEST_FILE.write_text(
+            json.dumps({
+                "label": speaker_label,
+                "genre": genre,
+                "available_puppets": pool,
+                "timestamp": datetime.now().isoformat(),
+            }, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        deadline = time.time() + MATCHING_TIMEOUT_S
+        while time.time() < deadline:
+            time.sleep(0.5)
+            try:
+                if MATCHING_RESPONSE_FILE.exists():
+                    resp = json.loads(MATCHING_RESPONSE_FILE.read_text(encoding="utf-8"))
+                    puppet = resp.get("puppet", "")
+                    if puppet in pool:
+                        log.info(f"🎭 Choix GUI : «{speaker_label}» → «{puppet.replace(' VQA.puppet-button', '')}»")
+                        return puppet
+            except Exception:
+                pass
+
+        log.warning(f"🎭 Timeout matching pour «{speaker_label}» — choix automatique.")
+        return random.choice(pool) if pool else "Default VQA.puppet-button"
+    finally:
+        MATCHING_REQUEST_FILE.unlink(missing_ok=True)
+        MATCHING_RESPONSE_FILE.unlink(missing_ok=True)
+
+
+def _get_label_genre(speaker_label: str) -> str:
+    """Retourne le genre d'un label sans déclencher de matching (logique pure)."""
+    n = speaker_label.strip().lower()
+    if n == "mr martin" or n.startswith("homme"):
+        return "homme"
+    if n.startswith("femme"):
+        return "femme"
+    return "homme"
 
 
 def choose_puppet_for_label(speaker_label: str) -> Tuple[str, str]:
@@ -821,10 +1005,11 @@ def choose_puppet_for_label(speaker_label: str) -> Tuple[str, str]:
         genre = "homme"
         pool = PUPPETS_BY_GENDER.get("homme", []) + PUPPETS_BY_GENDER.get("femme", [])
 
+    # Réutiliser le cache pour la cohérence dans un même pipeline
     if speaker_label in LABEL_TO_PUPPET_CACHE:
         return genre, LABEL_TO_PUPPET_CACHE[speaker_label]
 
-    puppet = random.choice(pool) if pool else "Default VQA.puppet-button"
+    puppet = _ask_matching_or_random(speaker_label, genre, pool)
     LABEL_TO_PUPPET_CACHE[speaker_label] = puppet
     return genre, puppet
 
@@ -843,20 +1028,20 @@ def automate_generation_videos(
     audio_segments_dir = audio_segments_dir or AUDIO_SEGMENTS_DIR
 
     if not os.path.exists(segments_txt_path):
-        print(f"❌ Fichier segments introuvable : {segments_txt_path}")
+        log.error("Fichier segments introuvable : %s", segments_txt_path)
         return
     if not os.path.isdir(audio_segments_dir):
-        print(f"❌ Dossier audio introuvable : {audio_segments_dir}")
+        log.error("Dossier audio introuvable : %s", audio_segments_dir)
         return
 
     lines = parse_segments_with_speakers(segments_txt_path)
     if not lines:
-        print("❌ Aucune ligne valide dans le fichier segments.")
+        log.error("Aucune ligne valide dans le fichier segments.")
         return
 
     mp3_files = list_audio_segments_sorted(audio_segments_dir)
     if not mp3_files:
-        print("❌ Aucun segment audio .mp3 trouvé.")
+        log.error("Aucun segment audio .mp3 trouvé.")
         return
 
     audit.info("=== ÉTAPE 8: GÉNÉRATION VIDÉOS ADOBE ===")
@@ -871,9 +1056,10 @@ def automate_generation_videos(
             mp3_by_index[int(nums[0])] = mp3_path
 
     if len(lines) != len(mp3_files):
-        print(
-            f"⚠️ Nb lignes texte ({len(lines)}) ≠ nb mp3 ({len(mp3_files)}). "
-            "On continue avec les segments qui ont un mp3 correspondant."
+        log.warning(
+            "Nb lignes texte (%d) ≠ nb mp3 (%d). "
+            "On continue avec les segments qui ont un mp3 correspondant.",
+            len(lines), len(mp3_files)
         )
         audit.warning(f"DÉCALAGE texte/mp3: {len(lines)} lignes vs {len(mp3_files)} mp3")
 
@@ -883,7 +1069,7 @@ def automate_generation_videos(
         seg_idx = info["index"]
         mp3_path = mp3_by_index.get(seg_idx)
         if mp3_path is None:
-            print(f"⚠️ Segment {seg_idx} ({info['label']}): pas de mp3 trouvé, skip.")
+            log.warning("Segment %d (%s): pas de mp3 trouvé, skip.", seg_idx, info['label'])
             skipped_segments.append(info)
             audit.warning(
                 f"  SKIP seg={seg_idx} label={info['label']} "
@@ -892,6 +1078,15 @@ def automate_generation_videos(
             )
             continue
         label = info["label"]
+        # Check skip AVANT le popup de matching (genre est déterministe, ne dépend pas du puppet)
+        _genre_check = _get_label_genre(label)
+        _out_fname = _safe_filename(f"{label} - {_genre_check} - {seg_idx}.mp4")
+        _out_path = os.path.join(VIDEO_SEGMENTS_DIR, _out_fname)
+        if os.path.exists(_out_path) and os.path.getsize(_out_path) > 0:
+            log.info("Segment %d (%s) deja genere, skip.", seg_idx, label)
+            skipped_segments.append(info)
+            continue
+        # Demander le puppet seulement si le segment est à générer
         genre, puppet = choose_puppet_for_label(label)
         try:
             seg_audio = AudioSegment.from_file(mp3_path)
@@ -922,17 +1117,24 @@ def automate_generation_videos(
     audit.info(f"Tasks à générer: {len(tasks)} | Skipped: {len(skipped_segments)}")
 
     if not tasks:
-        print("❌ Aucun job à traiter.")
+        log.error("Aucun job à traiter.")
         return
 
-    print(f"⏳ Lancement de {len(tasks)} segments (max {max_threads} pages parallèles, 1 seul navigateur)")
-    asyncio.run(run_pool(tasks, concurrency=max_threads))
+    _nb_total_adobe = len(tasks)
+    log.info("Lancement de %d segments (max %d pages paralleles, 1 seul navigateur)", _nb_total_adobe, max_threads)
+
+    def _adobe_progress(done: int, total: int):
+        log.info("Adobe: %d/%d segments generes", done, total)
+
+    asyncio.run(run_pool(tasks, concurrency=max_threads, on_progress=_adobe_progress))
 
     # Audit post-génération: vérifier les vidéos produites
     video_files = [f for f in os.listdir(VIDEO_SEGMENTS_DIR) if f.lower().endswith(".mp4")] if os.path.isdir(VIDEO_SEGMENTS_DIR) else []
-    audit.info(f"Vidéos produites: {len(video_files)} (attendues: {len(tasks)})")
-    if len(video_files) != len(tasks):
-        audit.warning(f"DÉCALAGE VIDÉO: {len(video_files)} vidéos vs {len(tasks)} tasks")
+    nb_ok = len(video_files)
+    nb_total = len(tasks)
+    audit.info(f"Vidéos produites: {nb_ok} (attendues: {nb_total})")
+    if nb_ok != nb_total:
+        audit.warning(f"DÉCALAGE VIDÉO: {nb_ok} vidéos vs {nb_total} tasks")
         task_ids = {t.segment_id for t in tasks}
         video_ids = set()
         for vf in video_files:
@@ -946,7 +1148,10 @@ def automate_generation_videos(
         vpath = os.path.join(VIDEO_SEGMENTS_DIR, vf)
         audit.debug(f"  {vf} taille={os.path.getsize(vpath)}o")
 
-    print("✅ Toutes les vidéos animées ont été générées.")
+    if nb_ok == nb_total:
+        log.info("[OK] Adobe — %d/%d segments generes", nb_ok, nb_total)
+    else:
+        log.warning("[PARTIEL] Adobe — %d/%d segments generes (%d manquants)", nb_ok, nb_total, nb_total - nb_ok)
 
 
 # =========================================================
@@ -955,48 +1160,14 @@ def automate_generation_videos(
 
 def get_transcription_file_with_verification(transcription_path: str) -> str | None:
     if not os.path.exists(transcription_path):
-        print(f"❌ Le fichier {transcription_path} est introuvable.")
+        log.error("Le fichier %s est introuvable.", transcription_path)
         return None
 
     with open(transcription_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    print("\n--- Aperçu de la transcription (début) ---")
-    print(content[:1500])
-    print("--- Fin de l’aperçu ---\n")
-
-    print("✅ Le contenu vous semble-t-il correct ?")
-    print("Appuie sur [y] pour continuer, [n] pour arrêter, ou attendre 30 secondes pour continuer automatiquement.")
-
-    start_time = time.time()
-    timeout_s = 30
-
-    while True:
-        if time.time() - start_time > timeout_s:
-            print("⏳ Temps écoulé. Suite du traitement...")
-            return content
-
-        if os.name == 'nt':
-            import msvcrt
-            if msvcrt.kbhit():
-                key = msvcrt.getwch().lower()
-                if key == 'y':
-                    print("➡️ Poursuite du traitement...")
-                    return content
-                if key == 'n':
-                    print("❌ Traitement interrompu par l’utilisateur.")
-                    sys.exit()
-        else:
-            import select
-            if select.select([sys.stdin], [], [], 1)[0]:
-                key = sys.stdin.readline().strip().lower()
-                if key == 'y':
-                    print("➡️ Poursuite du traitement...")
-                    return content
-                if key == 'n':
-                    print("❌ Traitement interrompu par l’utilisateur.")
-                    sys.exit()
-        time.sleep(1)
+    log.info("--- Aperçu de la transcription (début) ---\n%s\n--- Fin de l'aperçu ---", content[:1500])
+    return content
 
 
 # =========================================================
@@ -1020,9 +1191,9 @@ def archive_outputs():
     if os.path.exists(src):
         dst = os.path.join(archive_dir, "video_final.mp4")
         shutil.move(src, dst)
-        print(f"✅ Vidéo archivée dans : {dst}")
+        log.info("Vidéo archivée dans : %s", dst)
 
-    print(f"✅ Tous les fichiers ont été archivés dans : {archive_dir}")
+    log.info("Archivage terminé : %s", archive_dir)
 
 
 def delete_outputs():
@@ -1061,7 +1232,48 @@ def delete_outputs():
     os.makedirs(AUDIO_SEGMENTS_DIR, exist_ok=True)
     os.makedirs(VIDEO_SEGMENTS_DIR, exist_ok=True)
 
-    print("✅ Tous les fichiers ont été supprimés")
+    log.info("Nettoyage des fichiers temporaires terminé.")
+
+
+# =========================================================
+# PIPELINE STATE (reprise après crash)
+# =========================================================
+
+def _load_pipeline_state() -> dict:
+    try:
+        p = Path(PIPELINE_STATE_FILE)
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+def _save_pipeline_state(state: dict):
+    try:
+        Path(PIPELINE_STATE_FILE).write_text(
+            json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception as e:
+        log.warning(f"Impossible de sauvegarder pipeline_state.json: {e}")
+
+def _step_done(state: dict, step: str, *check_files) -> bool:
+    """True si l'étape est marquée done ET tous les fichiers de sortie existent."""
+    if step not in state.get("done", []):
+        return False
+    return all(Path(f).exists() for f in check_files)
+
+def _mark_done(state: dict, step: str):
+    state.setdefault("done", []).append(step)
+    _save_pipeline_state(state)
+
+def _cleanup_pipeline_state():
+    """Supprime Download.mp4 et pipeline_state.json en fin de pipeline."""
+    for p in (Path(RAW_VIDEO_PATH), Path(PIPELINE_STATE_FILE)):
+        try:
+            p.unlink(missing_ok=True)
+        except Exception as e:
+            log.warning(f"Impossible de supprimer {p.name}: {e}")
+    log.info("🗑️  Download.mp4 et pipeline_state.json supprimés.")
 
 
 # =========================================================
@@ -1077,201 +1289,269 @@ def run_pipeline_once() -> Tuple[bool, str]:
     log.info("📦 Traitement initial démarré…")
     t_all = time.perf_counter()
 
-    with time_step("0) Nettoyage initial"):
-        delete_outputs()
+    # ── Détection reprise pipeline (crash précédent) ───────────────────────────
+    state = _load_pipeline_state()
+    resuming = bool(state.get("done"))
+    if resuming:
+        log.info(f"♻️  Reprise pipeline détectée — étapes déjà faites: {state['done']}")
+    else:
+        state = {"started_at": datetime.now().isoformat(), "done": []}
+        _save_pipeline_state(state)
 
-    with time_step("1) Extraction audio depuis RAW_VIDEO"):
-        extract_audio_from_video()
+    # ── 0) Nettoyage initial (ignoré si reprise) ───────────────────────────────
+    if resuming:
+        log.info("⏭️  Étape 0 (Nettoyage) — ignorée (reprise en cours)")
+    else:
+        with time_step("0) Nettoyage initial"):
+            delete_outputs()
+        _mark_done(state, "nettoyage")
 
-    with time_step("2) Transcription + diarisation"):
-        wait_for_internet(label="Transcription + diarisation")
-        transcribe_segments_with_diarization(
-            audio_path=FULL_AUDIO_PATH,
-            output_dir=TRANSCRIPTS_DIR
-        )
+    # ── 1) Extraction audio ────────────────────────────────────────────────────
+    if _step_done(state, "audio", FULL_AUDIO_PATH):
+        log.info("⏭️  Étape 1 (Extraction audio) — ignorée")
+    else:
+        with time_step("1) Extraction audio depuis RAW_VIDEO"):
+            extract_audio_from_video()
+        _mark_done(state, "audio")
 
-    with time_step("3) Vérification + réécriture intervenants"):
-        segments_text_content = get_transcription_file_with_verification(RAW_SEGMENTS_PATH)
-        wait_for_internet(label="OpenAI texte verification")
-        rewrite_transcript_with_intervenants_gpt(
-            contenu_segments_brut=segments_text_content,
-            dossier_sortie=TRANSCRIPTS_DIR,
-            nom_fichier_sortie="transcription_segments_intervenants.txt",
-        )
+    # ── 2) Transcription + diarisation ────────────────────────────────────────
+    _diarization_json = os.path.join(TRANSCRIPTS_DIR, "diarization_segments.json")
+    if _step_done(state, "transcription", RAW_SEGMENTS_PATH, _diarization_json):
+        log.info("⏭️  Étape 2 (Transcription) — ignorée")
+    else:
+        with time_step("2) Transcription + diarisation"):
+            wait_for_internet(label="Transcription + diarisation")
+            transcribe_segments_with_diarization(
+                audio_path=FULL_AUDIO_PATH,
+                output_dir=TRANSCRIPTS_DIR
+            )
+        _mark_done(state, "transcription")
+        try:
+            _n_segs = len(parse_segments_with_speakers(RAW_SEGMENTS_PATH))
+            log.info("[OK] Transcription — %d segments detectes", _n_segs)
+        except Exception:
+            pass
 
-    with time_step("4) Réalignement strict des timings"):
-        build_aligned_rewritten_segments(
-            raw_segments_path=RAW_SEGMENTS_PATH,
-            rewritten_segments_path=REWRITTEN_SEGMENTS_PATH,
-            output_path=ALIGNED_SEGMENTS_PATH
-        )
-        # Audit: comparer les fichiers brut / réécrit / aligné
-        raw_lines = parse_segments_with_speakers(RAW_SEGMENTS_PATH)
-        rewritten_lines = parse_segments_with_speakers(REWRITTEN_SEGMENTS_PATH)
-        aligned_lines = parse_segments_with_speakers(ALIGNED_SEGMENTS_PATH)
-        audit.info("=== ÉTAPE 4: RÉALIGNEMENT ===")
-        audit.info(f"Segments bruts: {len(raw_lines)} | Réécrits: {len(rewritten_lines)} | Alignés: {len(aligned_lines)}")
-        if len(raw_lines) != len(aligned_lines):
-            audit.warning(f"DÉCALAGE: bruts ({len(raw_lines)}) != alignés ({len(aligned_lines)})")
-        for i, seg in enumerate(aligned_lines):
-            audit.debug(f"  seg_aligned[{seg['index']}] {seg['start_s']:.3f}-{seg['end_s']:.3f}s label={seg['label']}")
+    # ── 3) Vérification + réécriture intervenants ─────────────────────────────
+    if _step_done(state, "speakers", REWRITTEN_SEGMENTS_PATH):
+        log.info("⏭️  Étape 3 (Speakers) — ignorée")
+    else:
+        with time_step("3) Vérification + réécriture intervenants"):
+            segments_text_content = get_transcription_file_with_verification(RAW_SEGMENTS_PATH)
+            wait_for_internet(label="OpenAI texte verification")
+            rewrite_transcript_with_intervenants_gpt(
+                contenu_segments_brut=segments_text_content,
+                dossier_sortie=TRANSCRIPTS_DIR,
+                nom_fichier_sortie="transcription_segments_intervenants.txt",
+            )
+        _mark_done(state, "speakers")
 
-    with time_step("5) Découpage MP3 sur timings bruts alignés"):
-        audio_full_duration_ms = len(AudioSegment.from_file(FULL_AUDIO_PATH))
-        audit.info("=== ÉTAPE 5: DÉCOUPAGE AUDIO ===")
-        audit.info(f"Audio source: {FULL_AUDIO_PATH} duree={audio_full_duration_ms}ms")
-        audit.info(f"Padding={SEGMENT_PADDING_MS}ms | Min segment={MIN_SEGMENT_MS}ms")
+    # ── 4) Réalignement strict des timings ────────────────────────────────────
+    if _step_done(state, "realignment", ALIGNED_SEGMENTS_PATH):
+        log.info("⏭️  Étape 4 (Réalignement) — ignorée")
+    else:
+        with time_step("4) Réalignement strict des timings"):
+            build_aligned_rewritten_segments(
+                raw_segments_path=RAW_SEGMENTS_PATH,
+                rewritten_segments_path=REWRITTEN_SEGMENTS_PATH,
+                output_path=ALIGNED_SEGMENTS_PATH
+            )
+        _mark_done(state, "realignment")
 
-        cut_audio_by_diarization(
-            chemin_fichier_audio_mp3=FULL_AUDIO_PATH,
-            chemin_fichier_segments_txt=ALIGNED_SEGMENTS_PATH,
-            dossier_sortie_segments_audio=AUDIO_SEGMENTS_DIR,
-            padding_millisecondes=SEGMENT_PADDING_MS,
-            duree_minimale_conservee_millisecondes=MIN_SEGMENT_MS,
-            preferer_copie_flux=False,   # précision > rapidité
-        )
+    # Variables pipeline utilisées par les étapes suivantes (toujours recalculées)
+    raw_lines      = parse_segments_with_speakers(RAW_SEGMENTS_PATH)
+    rewritten_lines = parse_segments_with_speakers(REWRITTEN_SEGMENTS_PATH)
+    aligned_lines  = parse_segments_with_speakers(ALIGNED_SEGMENTS_PATH)
+    audit.info("=== ÉTAPE 4: RÉALIGNEMENT ===")
+    audit.info(f"Segments bruts: {len(raw_lines)} | Réécrits: {len(rewritten_lines)} | Alignés: {len(aligned_lines)}")
+    if len(raw_lines) != len(aligned_lines):
+        audit.warning(f"DÉCALAGE: bruts ({len(raw_lines)}) != alignés ({len(aligned_lines)})")
+    for seg in aligned_lines:
+        audit.debug(f"  seg_aligned[{seg['index']}] {seg['start_s']:.3f}-{seg['end_s']:.3f}s label={seg['label']}")
 
-        # Audit: lister les mp3 produits avec leurs durées
-        mp3_produced = sorted(
-            [f for f in os.listdir(AUDIO_SEGMENTS_DIR) if f.lower().endswith(".mp3")],
-            key=lambda f: f
-        )
-        audit.info(f"MP3 produits: {len(mp3_produced)} (attendus: {len(aligned_lines)})")
-        if len(mp3_produced) != len(aligned_lines):
-            audit.warning(f"DÉCALAGE AUDIO: {len(mp3_produced)} mp3 vs {len(aligned_lines)} segments alignés")
-            # Identifier les segments manquants
-            mp3_indices = set()
+    # ── 5) Découpage MP3 ──────────────────────────────────────────────────────
+    _manifest_path = os.path.join(TRANSCRIPTS_DIR, "audio_segments_manifest.json")
+    if _step_done(state, "audio_cut", _manifest_path):
+        log.info("⏭️  Étape 5 (Découpage audio) — ignorée")
+    else:
+        with time_step("5) Découpage MP3 sur timings bruts alignés"):
+            audio_full_duration_ms = len(AudioSegment.from_file(FULL_AUDIO_PATH))
+            audit.info("=== ÉTAPE 5: DÉCOUPAGE AUDIO ===")
+            audit.info(f"Audio source: {FULL_AUDIO_PATH} duree={audio_full_duration_ms}ms")
+            audit.info(f"Padding={SEGMENT_PADDING_MS}ms | Min segment={MIN_SEGMENT_MS}ms")
+            cut_audio_by_diarization(
+                chemin_fichier_audio_mp3=FULL_AUDIO_PATH,
+                chemin_fichier_segments_txt=ALIGNED_SEGMENTS_PATH,
+                dossier_sortie_segments_audio=AUDIO_SEGMENTS_DIR,
+                padding_millisecondes=SEGMENT_PADDING_MS,
+                duree_minimale_conservee_millisecondes=MIN_SEGMENT_MS,
+                preferer_copie_flux=False,
+            )
+            mp3_produced = sorted(
+                [f for f in os.listdir(AUDIO_SEGMENTS_DIR) if f.lower().endswith(".mp3")]
+            )
+            audit.info(f"MP3 produits: {len(mp3_produced)} (attendus: {len(aligned_lines)})")
+            if len(mp3_produced) != len(aligned_lines):
+                audit.warning(f"DÉCALAGE AUDIO: {len(mp3_produced)} mp3 vs {len(aligned_lines)} segments alignés")
+                mp3_indices = set()
+                for fname in mp3_produced:
+                    nums = re.findall(r'(\d+)', fname)
+                    if nums:
+                        mp3_indices.add(int(nums[0]))
+                for seg in aligned_lines:
+                    if seg["index"] not in mp3_indices:
+                        dur_ms = (seg["end_s"] - seg["start_s"]) * 1000
+                        audit.warning(
+                            f"  SEGMENT MANQUANT idx={seg['index']} "
+                            f"duree={dur_ms:.0f}ms (min={MIN_SEGMENT_MS}ms) "
+                            f"label={seg['label']} texte={seg['text'][:60]}"
+                        )
             for fname in mp3_produced:
-                nums = re.findall(r'(\d+)', fname)
-                if nums:
-                    mp3_indices.add(int(nums[0]))
-            for seg in aligned_lines:
-                if seg["index"] not in mp3_indices:
-                    dur_ms = (seg["end_s"] - seg["start_s"]) * 1000
-                    audit.warning(
-                        f"  SEGMENT MANQUANT idx={seg['index']} "
-                        f"duree={dur_ms:.0f}ms (min={MIN_SEGMENT_MS}ms) "
-                        f"label={seg['label']} texte={seg['text'][:60]}"
-                    )
-        for fname in mp3_produced:
-            fpath = os.path.join(AUDIO_SEGMENTS_DIR, fname)
-            try:
-                seg_audio = AudioSegment.from_file(fpath)
-                audit.debug(f"  {fname} duree={len(seg_audio)}ms taille={os.path.getsize(fpath)}o")
-            except Exception as e:
-                audit.error(f"  {fname} ILLISIBLE: {e}")
+                fpath = os.path.join(AUDIO_SEGMENTS_DIR, fname)
+                try:
+                    seg_audio = AudioSegment.from_file(fpath)
+                    audit.debug(f"  {fname} duree={len(seg_audio)}ms taille={os.path.getsize(fpath)}o")
+                except Exception as e:
+                    audit.error(f"  {fname} ILLISIBLE: {e}")
+        _mark_done(state, "audio_cut")
 
-    with time_step("6) Manifest de contrôle audio"):
-        write_audio_segments_manifest(
-            aligned_segments_path=ALIGNED_SEGMENTS_PATH,
-            audio_dir=AUDIO_SEGMENTS_DIR,
-            output_path=os.path.join(TRANSCRIPTS_DIR, "audio_segments_manifest.json")
+    # ── 6) Manifest de contrôle audio ─────────────────────────────────────────
+    if _step_done(state, "manifest", _manifest_path):
+        log.info("⏭️  Étape 6 (Manifest) — ignorée")
+    else:
+        with time_step("6) Manifest de contrôle audio"):
+            write_audio_segments_manifest(
+                aligned_segments_path=ALIGNED_SEGMENTS_PATH,
+                audio_dir=AUDIO_SEGMENTS_DIR,
+                output_path=_manifest_path,
+            )
+        _mark_done(state, "manifest")
+
+    # ── 7) Génération image de fond + split 9:16 ──────────────────────────────
+    _left_img  = os.path.join(IMAGES_DIR, "left",  "left_0.png")
+    _right_img = os.path.join(IMAGES_DIR, "right", "right_0.png")
+    if _step_done(state, "background", _left_img, _right_img):
+        log.info("⏭️  Étape 7 (Background) — ignorée")
+    else:
+        with time_step("7) Génération image de fond + split 9:16"):
+            full_txt = get_transcription_file_with_verification(RAW_SEGMENTS_PATH)
+            wait_for_internet(label="OpenAI image generation")
+            generate_image_with_openai(full_txt)
+            split_background_to_tiktok_pairs()
+        _mark_done(state, "background")
+
+    # ── 8) Génération vidéos segments (Adobe) ─────────────────────────────────
+    # Si l'assemblage final est déjà là → on saute 8 et 9 directement
+    if _step_done(state, "assembly", VIDEO_FINALE_PATH):
+        log.info("⏭️  Étapes 8+9 (Adobe + Assemblage) — ignorées (video_final.mp4 présente)")
+    else:
+        _has_segments = os.path.isdir(VIDEO_SEGMENTS_DIR) and any(
+            f.endswith(".mp4") for f in os.listdir(VIDEO_SEGMENTS_DIR)
         )
-
-    with time_step("7) Génération image de fond + split 9:16"):
-        full_txt = get_transcription_file_with_verification(RAW_SEGMENTS_PATH)
-        wait_for_internet(label="OpenAI image generation")
-        generate_image_with_openai(full_txt)
-        split_background_to_tiktok_pairs()
-
-    with time_step("8) Génération vidéos segments (Adobe)"):
-        wait_for_internet(label="Adobe generation")
-        automate_generation_videos(
-            max_threads=4,
-            segments_txt_path=ALIGNED_SEGMENTS_PATH,
-            audio_segments_dir=AUDIO_SEGMENTS_DIR,
-        )
-
-    with time_step("9) Assemblage final (sur transcript aligné)"):
-        # Audit pré-assemblage
-        audit.info("=== ÉTAPE 9: ASSEMBLAGE FINAL ===")
-        vid_files = sorted([f for f in os.listdir(VIDEO_SEGMENTS_DIR) if f.lower().endswith(".mp4")]) if os.path.isdir(VIDEO_SEGMENTS_DIR) else []
-        aligned_for_assembly = parse_segments_with_speakers(ALIGNED_SEGMENTS_PATH)
-        audit.info(f"Vidéos disponibles: {len(vid_files)} | Segments transcript: {len(aligned_for_assembly)}")
-
-        # Extraire les index des vidéos produites pour filtrer le transcript
-        video_indices = set()
-        for vf in vid_files:
-            m = re.search(r'(\d+)(?=\.mp4$)', vf)
-            if m:
-                video_indices.add(int(m.group(1)))
-
-        # Créer un transcript filtré ne contenant que les lignes avec une vidéo
-        filtered_transcript_path = os.path.join(TRANSCRIPTS_DIR, "transcription_segments_for_assembly.txt")
-        kept = 0
-        skipped_assembly = 0
-        with open(ALIGNED_SEGMENTS_PATH, "r", encoding="utf-8") as fin, \
-             open(filtered_transcript_path, "w", encoding="utf-8") as fout:
-            for line_num, line in enumerate(fin, start=1):
-                if line_num in video_indices:
-                    fout.write(line)
-                    kept += 1
-                else:
-                    skipped_assembly += 1
-                    audit.info(f"  Ligne {line_num} exclue de l'assemblage (pas de vidéo)")
-
-        audit.info(f"Transcript filtré: {kept} lignes gardées, {skipped_assembly} exclues → {filtered_transcript_path}")
-
-        if len(vid_files) != kept:
-            audit.warning(f"DÉCALAGE RÉSIDUEL: {len(vid_files)} vidéos vs {kept} lignes filtrées")
-
-        # Durées des vidéos vs timings attendus
-        total_video_dur = 0.0
-        for vf in vid_files:
-            vpath = os.path.join(VIDEO_SEGMENTS_DIR, vf)
-            try:
-                probe_cmd = subprocess.run(
-                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                     "-of", "default=noprint_wrappers=1:nokey=1", vpath],
-                    capture_output=True, text=True
-                )
-                vdur = float(probe_cmd.stdout.strip()) if probe_cmd.stdout.strip() else 0
-                total_video_dur += vdur
-                audit.debug(f"  {vf} duree_video={vdur:.3f}s taille={os.path.getsize(vpath)}o")
-            except Exception as e:
-                audit.error(f"  {vf} PROBE ERREUR: {e}")
-
-        filtered_lines = parse_segments_with_speakers(filtered_transcript_path)
-        if filtered_lines:
-            total_expected = filtered_lines[-1]["end_s"]
-            audit.info(f"Durée totale vidéos brutes: {total_video_dur:.3f}s | Durée attendue (transcript filtré): {total_expected:.3f}s")
-
-        assemble_from_tail_with_transcript(
-            video_segments_dir=VIDEO_SEGMENTS_DIR,
-            transcript_path=filtered_transcript_path,
-            output_path=VIDEO_FINALE_PATH,
-            crf=18,
-            preset="veryfast",
-            audio_bitrate="192k",
-            min_keep_sec=0.10,
-            force_fps=60,
-        )
-
-        # Audit post-assemblage
-        if os.path.exists(VIDEO_FINALE_PATH):
-            try:
-                probe_cmd = subprocess.run(
-                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                     "-of", "default=noprint_wrappers=1:nokey=1", VIDEO_FINALE_PATH],
-                    capture_output=True, text=True
-                )
-                final_dur = float(probe_cmd.stdout.strip()) if probe_cmd.stdout.strip() else 0
-                audio_dur = len(AudioSegment.from_file(FULL_AUDIO_PATH)) / 1000.0
-                drift_final = final_dur - audio_dur
-                audit.info(f"VIDÉO FINALE: duree={final_dur:.3f}s audio={audio_dur:.3f}s drift={drift_final:+.3f}s taille={os.path.getsize(VIDEO_FINALE_PATH)}o")
-                if abs(drift_final) > 0.5:
-                    audit.warning(f"DRIFT FINAL IMPORTANT: vidéo {drift_final:+.3f}s par rapport à l'audio")
-            except Exception as e:
-                audit.error(f"PROBE VIDÉO FINALE ERREUR: {e}")
+        if _step_done(state, "animation") and _has_segments:
+            log.info("⏭️  Étape 8 (Adobe) — ignorée (segments vidéo présents)")
         else:
-            audit.error("VIDÉO FINALE NON PRODUITE")
+            with time_step("8) Génération vidéos segments (Adobe)"):
+                wait_for_internet(label="Adobe generation")
+                _adobe_concurrency = int(os.getenv("ADOBE_CONCURRENCY", "8"))
+                log.info("Adobe concurrency: %d onglets", _adobe_concurrency)
+                automate_generation_videos(
+                    max_threads=_adobe_concurrency,
+                    segments_txt_path=ALIGNED_SEGMENTS_PATH,
+                    audio_segments_dir=AUDIO_SEGMENTS_DIR,
+                )
+            _mark_done(state, "animation")
 
+        # ── 9) Assemblage final ────────────────────────────────────────────────
+        with time_step("9) Assemblage final (sur transcript aligné)"):
+            audit.info("=== ÉTAPE 9: ASSEMBLAGE FINAL ===")
+            vid_files = sorted([f for f in os.listdir(VIDEO_SEGMENTS_DIR) if f.lower().endswith(".mp4")]) if os.path.isdir(VIDEO_SEGMENTS_DIR) else []
+            aligned_for_assembly = parse_segments_with_speakers(ALIGNED_SEGMENTS_PATH)
+            audit.info(f"Vidéos disponibles: {len(vid_files)} | Segments transcript: {len(aligned_for_assembly)}")
+
+            video_indices = set()
+            for vf in vid_files:
+                m = re.search(r'(\d+)(?=\.mp4$)', vf)
+                if m:
+                    video_indices.add(int(m.group(1)))
+
+            filtered_transcript_path = os.path.join(TRANSCRIPTS_DIR, "transcription_segments_for_assembly.txt")
+            kept = 0
+            skipped_assembly = 0
+            with open(ALIGNED_SEGMENTS_PATH, "r", encoding="utf-8") as fin, \
+                 open(filtered_transcript_path, "w", encoding="utf-8") as fout:
+                for line_num, line in enumerate(fin, start=1):
+                    if line_num in video_indices:
+                        fout.write(line)
+                        kept += 1
+                    else:
+                        skipped_assembly += 1
+                        audit.info(f"  Ligne {line_num} exclue de l'assemblage (pas de vidéo)")
+
+            audit.info(f"Transcript filtré: {kept} lignes gardées, {skipped_assembly} exclues → {filtered_transcript_path}")
+            if len(vid_files) != kept:
+                audit.warning(f"DÉCALAGE RÉSIDUEL: {len(vid_files)} vidéos vs {kept} lignes filtrées")
+
+            total_video_dur = 0.0
+            for vf in vid_files:
+                vpath = os.path.join(VIDEO_SEGMENTS_DIR, vf)
+                try:
+                    probe_cmd = subprocess.run(
+                        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                         "-of", "default=noprint_wrappers=1:nokey=1", vpath],
+                        capture_output=True, text=True
+                    )
+                    vdur = float(probe_cmd.stdout.strip()) if probe_cmd.stdout.strip() else 0
+                    total_video_dur += vdur
+                    audit.debug(f"  {vf} duree_video={vdur:.3f}s taille={os.path.getsize(vpath)}o")
+                except Exception as e:
+                    audit.error(f"  {vf} PROBE ERREUR: {e}")
+
+            filtered_lines = parse_segments_with_speakers(filtered_transcript_path)
+            if filtered_lines:
+                total_expected = filtered_lines[-1]["end_s"]
+                audit.info(f"Durée totale vidéos brutes: {total_video_dur:.3f}s | Durée attendue: {total_expected:.3f}s")
+
+            assemble_from_tail_with_transcript(
+                video_segments_dir=VIDEO_SEGMENTS_DIR,
+                transcript_path=filtered_transcript_path,
+                output_path=VIDEO_FINALE_PATH,
+                crf=18,
+                preset="veryfast",
+                audio_bitrate="192k",
+                min_keep_sec=0.10,
+                force_fps=60,
+            )
+
+            if os.path.exists(VIDEO_FINALE_PATH):
+                try:
+                    probe_cmd = subprocess.run(
+                        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                         "-of", "default=noprint_wrappers=1:nokey=1", VIDEO_FINALE_PATH],
+                        capture_output=True, text=True
+                    )
+                    final_dur = float(probe_cmd.stdout.strip()) if probe_cmd.stdout.strip() else 0
+                    audio_dur = len(AudioSegment.from_file(FULL_AUDIO_PATH)) / 1000.0
+                    drift_final = final_dur - audio_dur
+                    size_mb = os.path.getsize(VIDEO_FINALE_PATH) / (1024 * 1024)
+                    audit.info(f"VIDÉO FINALE: duree={final_dur:.3f}s audio={audio_dur:.3f}s drift={drift_final:+.3f}s taille={os.path.getsize(VIDEO_FINALE_PATH)}o")
+                    if abs(drift_final) > 0.5:
+                        audit.warning(f"DRIFT FINAL IMPORTANT: vidéo {drift_final:+.3f}s par rapport à l'audio")
+                    log.info("[OK] Assemblage — %.0fs, %.1f MB", final_dur, size_mb)
+                except Exception as e:
+                    audit.error(f"PROBE VIDÉO FINALE ERREUR: {e}")
+                    log.info("[OK] Assemblage — video_final.mp4 generee")
+            else:
+                audit.error("VIDÉO FINALE NON PRODUITE")
+                log.warning("[ECHEC] Assemblage — video_final.mp4 non produite")
+        _mark_done(state, "assembly")
+
+    # ── 10) Upload TikTok ──────────────────────────────────────────────────────
     with time_step("10) Generation description + Upload TikTok"):
-        # Generer la description TikTok a partir de la transcription
         caption = generate_tiktok_description(ALIGNED_SEGMENTS_PATH)
 
         if not _refresh_token_ok(sys.executable, LOG_DIR / "upload_tiktok.log"):
-            log.warning("⚠️ Refresh pré-upload échoué — tentative d'upload quand même (le token actuel est peut-être encore valide)")
+            log.warning("⚠️ Refresh pré-upload échoué — tentative quand même")
 
         final_mp4 = VIDEO_FINALE_PATH
         wait_for_internet(label="Post TikTok")
@@ -1282,12 +1562,11 @@ def run_pipeline_once() -> Tuple[bool, str]:
             log.info("✅ Upload TikTok OK -> archivage standard")
             with time_step("11) Archivage (post OK)"):
                 archive_outputs()
+            _cleanup_pipeline_state()
             dt_all = (time.perf_counter() - t_all) / 60
             log.info(f"🎉 Pipeline COMPLET terminé en {dt_all:.3f} minutes")
-            print("\n✅ Traitement terminé.")
             return True, "posted"
 
-        # Stasher la vidéo pour tout type d'échec (spam, token, erreur inconnue)
         log.warning(f"⚠️ Upload TikTok échoué (reason={reason}) -> stockage dans pending_posts puis reprise.")
         stash_unposted_videos(
             base_dir=BASE_DIR,
@@ -1297,31 +1576,41 @@ def run_pipeline_once() -> Tuple[bool, str]:
         )
         with time_step(f"11) Nettoyage après échec TikTok ({reason})"):
             delete_outputs()
+        _cleanup_pipeline_state()
         return False, f"{reason}_stashed"
 
 
 def main():
-    while True:
-        try:
-            done, status = run_pipeline_once()
-            if done and status == "posted":
-                break
+    """
+    Traite exactement UNE vidéo (Download.mp4) et sort.
+    La gestion de la file d'attente est faite par auto_scheduler.py.
+    """
+    try:
+        done, status = run_pipeline_once()
+        if done and status == "posted":
+            log.info("✅ Pipeline terminé avec succès.")
+            sys.exit(0)
+        if status and status.endswith("_stashed"):
+            log.info(f"📦 Vidéo stashée ({status}) — pipeline terminé, le scheduler reprend la main.")
+            sys.exit(0)
+        log.warning(f"Pipeline terminé avec status inattendu: {status}")
+        sys.exit(0)
 
-            if status and status.endswith("_stashed"):
-                log.info(f"📦 Vidéo stashée ({status}), passage à la vidéo suivante…")
-                continue
+    except ModerationRejectedError:
+        # Code 2 = erreur permanente, le scheduler met la vidéo de côté sans retry
+        sys.exit(2)
 
-        except openai.RateLimitError as e:
-            msg = str(e)
-            if "insufficient_quota" in msg:
-                log.error("⛔ Quota OpenAI insuffisant (insufficient_quota). Pause 15 minutes puis relance du pipeline…")
-                time.sleep(15 * 60)
-                continue
-            raise
+    except openai.RateLimitError as e:
+        msg = str(e)
+        if "insufficient_quota" in msg:
+            log.error("Quota OpenAI insuffisant. Arret du pipeline (le scheduler relancera plus tard).")
+            sys.exit(1)
+        log.exception("RateLimitError non geree.")
+        sys.exit(1)
 
-        except Exception:
-            log.exception("💥 Erreur non gérée dans le pipeline, arrêt.")
-            raise
+    except Exception:
+        log.exception("Erreur non geree dans le pipeline, arret.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

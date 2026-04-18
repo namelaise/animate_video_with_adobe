@@ -37,6 +37,7 @@ LOG_FILE = os.path.join(LOG_DIR, "log.txt")
 
 GENERATE_INTERVAL = 10   # secondes (ici mis à 10 pour test)
 POST_INTERVAL = 10       # secondes (idem)
+REJECTED_DIR = os.path.join(BASE_DIR, 'moderation_rejected')
 
 VIDEO_EXTS = ('.mp4', '.mov', '.mkv', '.avi')
 
@@ -45,25 +46,26 @@ VIDEO_EXTS = ('.mp4', '.mov', '.mkv', '.avi')
 # ==============================
 os.makedirs(LOG_DIR, exist_ok=True)
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+log = logging.getLogger("scheduler")
+log.setLevel(logging.INFO)
 
-formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
+formatter = logging.Formatter('[%(asctime)s] %(levelname)-8s [%(name)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 # Handler console
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(formatter)
-logger.addHandler(console_handler)
-
+log.addHandler(console_handler)
 
 file_handler = RotatingFileHandler(
     LOG_FILE,
-    maxBytes=5 * 1024 * 1024,  # 5 MB
-    backupCount=5,             # garde log.txt.1 ... log.txt.5
+    mode="w",                  # logs frais a chaque lancement
+    maxBytes=2 * 1024 * 1024,  # 2 MB max
+    backupCount=1,
     encoding="utf-8"
 )
 file_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
+log.addHandler(file_handler)
+log.propagate = False
 
 
 
@@ -96,17 +98,16 @@ def pick_video_for_processing():
 
 
 def prepare_main_input(src_video):
-    """Copie la vidéo sélectionnée vers MAIN_INPUT_PATH en la renommant Download.mp4"""
+    """Copie la vidéo sélectionnée vers MAIN_INPUT_PATH. Ne supprime PAS la source ici."""
     try:
         if os.path.abspath(src_video) == os.path.abspath(MAIN_INPUT_PATH):
-            logging.info('La vidéo sélectionnée est déjà Download.mp4')
+            log.info('La vidéo sélectionnée est déjà Download.mp4')
             return True
         shutil.copy2(src_video, MAIN_INPUT_PATH)
-        os.remove(src_video)
-        logging.info(f'Copié {src_video} -> {MAIN_INPUT_PATH}')
+        log.info(f'Copié {src_video} -> {MAIN_INPUT_PATH}')
         return True
     except Exception as e:
-        logging.exception('Erreur lors de la copie vers Download.mp4')
+        log.exception('Erreur lors de la copie vers Download.mp4')
         return False
 
 
@@ -127,11 +128,21 @@ def run_main_script():
             "-u",
             os.path.join(BASE_DIR, 'main_v3.py')
         ]
-        logging.info('Lancement de main.py avec %s', PYTHON_EXE)
+        log.info('Lancement de main.py avec %s', PYTHON_EXE)
 
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
+
+        # Lire la concurrence Adobe depuis gui_config.json
+        _gui_cfg = os.path.join(BASE_DIR, "gui_config.json")
+        try:
+            import json as _json
+            if os.path.exists(_gui_cfg):
+                _conc = _json.loads(open(_gui_cfg, encoding="utf-8").read()).get("adobe_concurrency", 8)
+                env["ADOBE_CONCURRENCY"] = str(int(_conc))
+        except Exception:
+            pass
 
         p = subprocess.Popen(
             cmd,
@@ -145,8 +156,8 @@ def run_main_script():
             env=env
         )
 
-        t_out = threading.Thread(target=_pump_stream, args=(p.stdout, lambda s: logging.info("main.py: %s", s)))
-        t_err = threading.Thread(target=_pump_stream, args=(p.stderr, lambda s: logging.error("main.py: %s", s)))
+        t_out = threading.Thread(target=_pump_stream, args=(p.stdout, lambda s: log.info("main.py: %s", s)))
+        t_err = threading.Thread(target=_pump_stream, args=(p.stderr, lambda s: log.error("main.py: %s", s)))
         t_out.daemon = True
         t_err.daemon = True
         t_out.start()
@@ -156,12 +167,12 @@ def run_main_script():
         t_out.join(timeout=1)
         t_err.join(timeout=1)
 
-        logging.info('main.py terminé avec code %s', rc)
-        return rc == 0
+        log.info('main.py terminé avec code %s', rc)
+        return rc  # 0=succès, 1=erreur retry, 2=rejet permanent
 
     except Exception:
-        logging.exception('Erreur lors de l’exécution streaming de main.py')
-        return False
+        log.exception('Erreur lors de l\'exécution streaming de main.py')
+        return 1
 
 
 
@@ -175,23 +186,23 @@ def scrape_if_needed():
     """
     daily = get_daily_count()
     if daily >= DEFAULT_DAILY_LIMIT:
-        logging.info(f'Quota scraping atteint ({daily}/{DEFAULT_DAILY_LIMIT}), pas de telechargement.')
+        log.info(f'Quota scraping atteint ({daily}/{DEFAULT_DAILY_LIMIT}), pas de telechargement.')
         return 0
 
     # Verifier aussi combien de videos sont deja en attente dans download/
     pending_downloads = find_download_videos()
     if len(pending_downloads) >= DEFAULT_DAILY_LIMIT:
-        logging.info(f'{len(pending_downloads)} video(s) deja en attente dans download/, scraping differe.')
+        log.info(f'{len(pending_downloads)} video(s) deja en attente dans download/, scraping differe.')
         return 0
 
-    logging.info('Lancement du scraping TikTok...')
+    log.info('Lancement du scraping TikTok...')
     wait_for_internet(poll_every=30)
     try:
         downloaded = scrape_accounts(DEFAULT_ACCOUNTS, limit=DEFAULT_DAILY_LIMIT)
-        logging.info(f'Scraping termine: {downloaded} video(s) telechargee(s)')
+        log.info(f'Scraping termine: {downloaded} video(s) telechargee(s)')
         return downloaded
     except Exception:
-        logging.exception('Erreur lors du scraping TikTok')
+        log.exception('Erreur lors du scraping TikTok')
         return 0
 
 
@@ -201,26 +212,93 @@ def scrape_loop():
         try:
             scrape_if_needed()
         except Exception:
-            logging.exception('Erreur inattendue dans scrape_loop')
+            log.exception('Erreur inattendue dans scrape_loop')
         time.sleep(SCRAPE_INTERVAL)
 
 
 def generation_loop():
+    _state_file = Path(BASE_DIR) / "pipeline_state.json"
+
     while True:
         try:
-            logging.info('Début du cycle de génération')
+            log.info('Début du cycle de génération')
+
+            # ── Reprise d'un pipeline interrompu (crash système) ──────────────
+            if os.path.exists(MAIN_INPUT_PATH) and _state_file.exists():
+                log.info('♻️  Download.mp4 + pipeline_state.json détectés — reprise du pipeline précédent')
+                wait_for_internet(poll_every=5)
+                rc = run_main_script()
+                if rc == 2:
+                    # Rejet permanent (ex: modération OpenAI) → mise de côté
+                    try:
+                        os.makedirs(REJECTED_DIR, exist_ok=True)
+                        dest = os.path.join(REJECTED_DIR, 'Download.mp4')
+                        if os.path.exists(MAIN_INPUT_PATH):
+                            shutil.move(MAIN_INPUT_PATH, dest)
+                        _state_file.unlink(missing_ok=True)
+                        log.warning('Video rejetee definitivement (moderation) — deplacee dans moderation_rejected/')
+                    except Exception as ex:
+                        log.error(f'Impossible de deplacer la video rejetee: {ex}')
+                elif rc != 0:
+                    # Reprise échouée → vider l'état pour autoriser un fresh start
+                    try:
+                        _state_file.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    # Remettre Download.mp4 dans download/ pour retry classique
+                    try:
+                        restore_path = os.path.join(BASE_DIR, 'download', 'Download.mp4')
+                        if not os.path.exists(restore_path) and os.path.exists(MAIN_INPUT_PATH):
+                            shutil.copy2(MAIN_INPUT_PATH, restore_path)
+                            log.warning('Reprise echouee → video remise en file pour retry')
+                    except Exception as ex:
+                        log.error(f'Impossible de remettre la video en file: {ex}')
+                log.info(f'Fin du cycle de reprise. Pause {GENERATE_INTERVAL} secondes')
+                time.sleep(GENERATE_INTERVAL)
+                continue
+
+            # ── Flux normal : pick d'une nouvelle vidéo ───────────────────────
             src = pick_video_for_processing()
             if not src:
-                logging.info('Aucune vidéo trouvée dans ./download. Attente du prochain cycle.')
-            else:
-                logging.info(f'Vidéo choisie pour traitement: {src}')
-                ok = prepare_main_input(src)
-                if ok:
-                    wait_for_internet(poll_every=5)
-                    run_main_script()
-            logging.info(f'Fin du cycle de génération. Pause {GENERATE_INTERVAL} secondes')
+                log.info('Aucune vidéo dans ./download. Pause longue (60s).')
+                time.sleep(60)
+                continue
+            log.info(f'Vidéo choisie pour traitement: {src}')
+            ok = prepare_main_input(src)
+            if ok:
+                # Supprimer de download/ maintenant pour eviter double-pick,
+                # mais seulement si ce n'est pas deja Download.mp4
+                if os.path.abspath(src) != os.path.abspath(MAIN_INPUT_PATH):
+                    try:
+                        os.remove(src)
+                    except Exception:
+                        log.warning(f'Impossible de supprimer {src} de download/')
+                wait_for_internet(poll_every=5)
+                rc = run_main_script()
+                if rc == 2:
+                    # Rejet permanent (ex: modération OpenAI) → mise de côté
+                    video_name = os.path.basename(src)
+                    try:
+                        os.makedirs(REJECTED_DIR, exist_ok=True)
+                        dest = os.path.join(REJECTED_DIR, video_name)
+                        if os.path.exists(MAIN_INPUT_PATH):
+                            shutil.move(MAIN_INPUT_PATH, dest)
+                        log.warning(f'Video rejetee definitivement (moderation) — deplacee dans moderation_rejected/{video_name}')
+                    except Exception as ex:
+                        log.error(f'Impossible de deplacer la video rejetee: {ex}')
+                elif rc != 0:
+                    # Echec pipeline : remettre la video dans download/ pour retry
+                    video_name = os.path.basename(src)
+                    restore_path = os.path.join(BASE_DIR, 'download', video_name)
+                    try:
+                        if not os.path.exists(restore_path) and os.path.exists(MAIN_INPUT_PATH):
+                            shutil.copy2(MAIN_INPUT_PATH, restore_path)
+                            log.warning(f'Pipeline echoue — video remise en file: {video_name}')
+                    except Exception as ex:
+                        log.error(f'Impossible de remettre la video en file: {ex}')
+            log.info(f'Fin du cycle de génération. Pause {GENERATE_INTERVAL} secondes')
         except Exception:
-            logging.exception('Erreur inattendue dans generation_loop')
+            log.exception('Erreur inattendue dans generation_loop')
         time.sleep(GENERATE_INTERVAL)
 
 
@@ -241,7 +319,7 @@ def post_video(final_mp4, poll=True, extra_args=None, timeout=30*60):
     if extra_args:
         cmd.extend(list(extra_args))
 
-    logging.info("Lancement: %s", " ".join([repr(c) for c in cmd]))
+    log.info("Lancement: %s", " ".join([repr(c) for c in cmd]))
 
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
@@ -262,12 +340,12 @@ def post_video(final_mp4, poll=True, extra_args=None, timeout=30*60):
 
         t_out = threading.Thread(
             target=_pump_stream,
-            args=(p.stdout, lambda s: logging.info("post_tiktok: %s", s)),
+            args=(p.stdout, lambda s: log.info("post_tiktok: %s", s)),
             daemon=True
         )
         t_err = threading.Thread(
             target=_pump_stream,
-            args=(p.stderr, lambda s: logging.error("post_tiktok: %s", s)),
+            args=(p.stderr, lambda s: log.error("post_tiktok: %s", s)),
             daemon=True
         )
         t_out.start()
@@ -276,7 +354,7 @@ def post_video(final_mp4, poll=True, extra_args=None, timeout=30*60):
         try:
             rc = p.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            logging.error("Timeout (%ss) — kill post_tiktok_inbox.py", timeout)
+            log.error("Timeout (%ss) — kill post_tiktok_inbox.py", timeout)
             try:
                 p.kill()
             finally:
@@ -287,27 +365,27 @@ def post_video(final_mp4, poll=True, extra_args=None, timeout=30*60):
         t_out.join(timeout=1)
         t_err.join(timeout=1)
 
-        logging.info("post_tiktok_inbox.py terminé avec code %s", rc)
+        log.info("post_tiktok_inbox.py terminé avec code %s", rc)
         return rc == 0
 
     except Exception:
-        logging.exception("Erreur lors de l’exécution de post_tiktok_inbox.py")
+        log.exception("Erreur lors de l'exécution de post_tiktok_inbox.py")
         return False
 
 
 def posting_loop():
     while True:
         try:
-            logging.info('Début du cycle de publication')
+            log.info('Début du cycle de publication')
             vids = sorted(glob.glob(os.path.join(COMPOSITE_DIR, '*')), key=os.path.getmtime)
             vids = [v for v in vids if os.path.isfile(v) and v.lower().endswith(VIDEO_EXTS)]
             if not vids:
-                logging.info('Aucune vidéo à poster actuellement. Retente dans 10 min.')
+                log.info('Aucune vidéo à poster actuellement. Retente dans 10 min.')
                 time.sleep(600)
                 continue
 
             video_to_post = vids[0]
-            logging.info(f'Vidéo sélectionnée pour post: {video_to_post}')
+            log.info(f'Vidéo sélectionnée pour post: {video_to_post}')
             wait_for_internet(poll_every=5)
             success = post_video(video_to_post)
             if success:
@@ -318,14 +396,14 @@ def posting_loop():
                         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                         dest = os.path.join(POSTED_DIR, f"{base}_{timestamp}{ext}")
                     shutil.move(video_to_post, dest)
-                    logging.info(f'Vidéo postée et déplacée vers {dest}')
+                    log.info(f'Vidéo postée et déplacée vers {dest}')
                 except Exception:
-                    logging.exception('Erreur lors du déplacement de la vidéo postée')
+                    log.exception('Erreur lors du déplacement de la vidéo postée')
             else:
-                logging.warning('La tentative de post a échoué. Retente au prochain cycle.')
-            logging.info(f'Fin du cycle de publication. Pause {POST_INTERVAL} secondes')
+                log.warning('La tentative de post a échoué. Retente au prochain cycle.')
+            log.info(f'Fin du cycle de publication. Pause {POST_INTERVAL} secondes')
         except Exception:
-            logging.exception('Erreur inattendue dans posting_loop')
+            log.exception('Erreur inattendue dans posting_loop')
         time.sleep(POST_INTERVAL)
 
 def has_internet(host="1.1.1.1", port=53, timeout=3) -> bool:
@@ -348,9 +426,9 @@ def wait_for_internet(poll_every=5):
     Bloque tant qu'il n'y a pas Internet.
     """
     while not has_internet():
-        logging.warning("Pas d'Internet détecté. Nouvelle tentative dans %ss...", poll_every)
+        log.warning("Pas d'Internet détecté. Nouvelle tentative dans %ss...", poll_every)
         time.sleep(poll_every)
-    logging.info("Internet OK.")
+    log.info("Internet OK.")
 
 
 
@@ -358,11 +436,30 @@ def wait_for_internet(poll_every=5):
 # Main
 # ==============================
 if __name__ == '__main__':
-    logging.info(f"Python utilisé: {PYTHON_EXE}")
+    # ── Instance unique (named mutex Windows) ─────────────────────────────────
+    _scheduler_mutex = None
+    if sys.platform == "win32":
+        try:
+            import ctypes as _ct
+            _ERROR_ALREADY_EXISTS = 183
+            _scheduler_mutex = _ct.windll.kernel32.CreateMutexW(
+                None, False, "Global\\MrMartinScheduler"
+            )
+            if _ct.windll.kernel32.GetLastError() == _ERROR_ALREADY_EXISTS:
+                log.error("⛔  Un scheduler est déjà en cours d'exécution. Arrêt.")
+                sys.exit(1)
+        except Exception:
+            pass
+
+    # pipeline.log et upload_tiktok.log sont geres par main_v3.py (subprocess).
+    # scraper.log est gere par scraper_tiktok.py (import, mode="w").
+    # log.txt est gere par ce script (RotatingFileHandler, mode="w").
+    # NE PAS tronquer manuellement : ca corrompt les FileHandlers deja ouverts.
+    log.info(f"Python utilisé: {PYTHON_EXE}")
     ensure_dirs()
 
     # Scraping initial au demarrage (rattrapage si PC etait eteint)
-    logging.info('Scraping initial au demarrage...')
+    log.info('Scraping initial au demarrage...')
     scrape_if_needed()
 
     t0 = threading.Thread(target=scrape_loop, daemon=True)
@@ -371,9 +468,9 @@ if __name__ == '__main__':
     t0.start()
     t1.start()
     # t2.start()
-    logging.info('auto_scheduler demarré (scraping + generation). Appuyez sur Ctrl+C pour quitter.')
+    log.info('auto_scheduler demarré (scraping + generation). Appuyez sur Ctrl+C pour quitter.')
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        logging.info('Interruption par utilisateur, arret du scheduler.')
+        log.info('Interruption par utilisateur, arret du scheduler.')

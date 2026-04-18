@@ -28,15 +28,18 @@ DAILY_LOG_FILE = BASE_DIR / "scraper_daily.json"
 LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s: %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(LOG_DIR / "scraper.log", encoding="utf-8"),
-    ]
-)
 log = logging.getLogger("scraper")
+log.setLevel(logging.INFO)
+# Configurer les handlers uniquement si pas déjà fait (évite les doublons lors de l'import)
+if not log.handlers:
+    _fmt = logging.Formatter('[%(asctime)s] %(levelname)-8s [%(name)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    _sh = logging.StreamHandler(sys.stdout)
+    _sh.setFormatter(_fmt)
+    _fh = logging.FileHandler(LOG_DIR / "scraper.log", mode="w", encoding="utf-8")
+    _fh.setFormatter(_fmt)
+    log.addHandler(_sh)
+    log.addHandler(_fh)
+    log.propagate = False
 
 DEFAULT_ACCOUNTS = [
     "https://www.tiktok.com/@martinspam001",
@@ -86,35 +89,86 @@ def set_daily_count(count: int):
     )
 
 
+YTDLP_CMD = [sys.executable, "-m", "yt_dlp"]
+YTDLP_UPDATE_CACHE = BASE_DIR / ".ytdlp_last_update"
+
+
 def ensure_ytdlp():
+    # Verifier si yt-dlp est disponible
     try:
-        subprocess.run(["yt-dlp", "--version"], capture_output=True, check=True)
-        return True
-    except FileNotFoundError:
+        subprocess.run(YTDLP_CMD + ["--version"], capture_output=True, check=True)
+    except (FileNotFoundError, subprocess.CalledProcessError):
         log.error("yt-dlp n'est pas installe. Installation en cours...")
         try:
             subprocess.run([sys.executable, "-m", "pip", "install", "yt-dlp"], check=True)
             log.info("yt-dlp installe avec succes.")
-            return True
         except Exception as e:
             log.error(f"Impossible d'installer yt-dlp: {e}")
             return False
 
+    # Mise a jour une seule fois par jour (evite ~60s de pip a chaque lancement)
+    today = date.today().isoformat()
+    last_update = ""
+    if YTDLP_UPDATE_CACHE.exists():
+        try:
+            last_update = YTDLP_UPDATE_CACHE.read_text(encoding="utf-8").strip()
+        except Exception:
+            pass
+    if last_update != today:
+        try:
+            r = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"],
+                capture_output=True, text=True, timeout=60,
+            )
+            if r.returncode == 0:
+                YTDLP_UPDATE_CACHE.write_text(today, encoding="utf-8")
+                if "already satisfied" not in r.stdout.lower():
+                    log.info("yt-dlp mis a jour.")
+        except Exception:
+            pass  # pas bloquant
+    return True
 
-def list_videos_from_account(account_url: str, max_videos: int = 30) -> list[dict]:
-    """Recupere la liste des videos d'un compte TikTok via yt-dlp --flat-playlist."""
-    cmd = [
-        "yt-dlp",
-        "--flat-playlist",
-        "--print-json",
-        "--playlist-end", str(max_videos),
-        "--no-warnings",
-        account_url,
-    ]
-    try:
+
+def _run_ytdlp_with_cookie_fallback(base_args: list[str], url: str) -> subprocess.CompletedProcess:
+    """Lance yt-dlp en essayant cookies.txt > firefox > edge > chrome > sans cookies."""
+    cookies_file = BASE_DIR / "cookies.txt"
+    candidates = []
+    if cookies_file.exists():
+        candidates.append(["--cookies", str(cookies_file)])
+    for browser in ("firefox", "edge", "chrome"):
+        candidates.append(["--cookies-from-browser", browser])
+    candidates.append([])  # sans cookies en dernier recours
+
+    last_result = None
+    for cookie_args in candidates:
+        cmd = YTDLP_CMD + base_args + cookie_args + [url]
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace"
         )
+        last_result = result
+        stderr_low = result.stderr.lower()
+        cookie_error = ("could not copy" in stderr_low) or ("cookie" in stderr_low and "error" in stderr_low)
+        if cookie_error:
+            source = cookie_args[1] if len(cookie_args) >= 2 else "aucun"
+            log.warning(f"Cookies inaccessibles ({source}), essai suivant...")
+            continue
+        return result
+    return last_result
+
+
+def list_videos_from_account(account_url: str, max_videos: int = 30) -> list[dict]:
+    """Recupere la liste des videos d'un compte TikTok via yt-dlp --flat-playlist."""
+    base_args = [
+        "--flat-playlist",
+        "-j",
+        "--playlist-end", str(max_videos),
+        "--no-warnings",
+    ]
+    try:
+        result = _run_ytdlp_with_cookie_fallback(base_args, account_url)
+        if result.returncode != 0 and result.stderr.strip():
+            log.warning(f"yt-dlp stderr ({account_url}): {result.stderr.strip()[:500]}")
+
         videos = []
         for line in result.stdout.strip().split("\n"):
             line = line.strip()
@@ -130,6 +184,10 @@ def list_videos_from_account(account_url: str, max_videos: int = 30) -> list[dic
                 })
             except json.JSONDecodeError:
                 continue
+
+        if not videos and result.stdout.strip():
+            log.warning(f"stdout non-vide mais aucun JSON parse ({account_url}): {result.stdout.strip()[:300]}")
+
         return videos
     except subprocess.TimeoutExpired:
         log.warning(f"Timeout lors du listing de {account_url}")
@@ -143,17 +201,13 @@ def download_video(video_url: str, video_id: str) -> bool:
     """Telecharge une video TikTok dans le dossier download/."""
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
     output_template = str(DOWNLOAD_DIR / f"{video_id}.%(ext)s")
-    cmd = [
-        "yt-dlp",
+    base_args = [
         "--no-warnings",
         "--merge-output-format", "mp4",
         "-o", output_template,
-        video_url,
     ]
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, encoding="utf-8", errors="replace"
-        )
+        result = _run_ytdlp_with_cookie_fallback(base_args, video_url)
         if result.returncode == 0:
             log.info(f"Telecharge: {video_id}")
             return True
@@ -202,6 +256,7 @@ def scrape_accounts(accounts: list[str], limit: int = DEFAULT_DAILY_LIMIT) -> in
                 if dur is not None and (dur < 10 or dur > 600):
                     log.info(f"  Skip {vid} (duree={dur}s hors limites)")
                     continue
+                v["_account_url"] = account_url
                 all_new_videos.append(v)
 
     if not all_new_videos:
@@ -220,7 +275,9 @@ def scrape_accounts(accounts: list[str], limit: int = DEFAULT_DAILY_LIMIT) -> in
         vid = v["id"]
         url = v["url"]
         if not url:
-            url = f"https://www.tiktok.com/@user/video/{vid}"
+            acct = v.get("_account_url", "")
+            username = acct.rstrip("/").split("@")[-1] if "@" in acct else "user"
+            url = f"https://www.tiktok.com/@{username}/video/{vid}"
 
         log.info(f"Telechargement {downloaded + 1}/{remaining}: {vid} ({v.get('title', '')[:50]})")
         if download_video(url, vid):

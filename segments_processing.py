@@ -15,11 +15,14 @@ from __future__ import annotations
 import os
 import re
 import json
+import logging
 import subprocess
 from typing import List, Dict, Optional
 
 from pydub import AudioSegment
 from openai import OpenAI
+
+log = logging.getLogger("pipeline")
 
 
 # -----------------------------
@@ -174,7 +177,7 @@ def rewrite_transcript_with_intervenants_gpt(
     with open(chemin_sortie, "w", encoding="utf-8") as f:
         f.write(texte_rewrite)
 
-    print(f"✅ Fichier réécrit enregistré : {chemin_sortie}")
+    log.info("Fichier reecrit enregistre : %s", chemin_sortie)
     return chemin_sortie
 
 # -------------------------------------------------------
@@ -255,7 +258,7 @@ def cut_audio_by_diarization(
 
     segments = parse_diarization_segments_file(chemin_fichier_segments_txt)
     if not segments:
-        print("⚠️ Aucun segment à découper (fichier segments vide ou mal formé).")
+        log.warning("Aucun segment a decouper (fichier segments vide ou mal forme).")
         return []
 
     manifeste: List[Dict[str, object]] = []
@@ -269,7 +272,7 @@ def cut_audio_by_diarization(
         fin_ms = _clamp(fin_ms, 0, duree_totale_ms)
         duree_ms = fin_ms - debut_ms
         if duree_ms < duree_minimale_conservee_millisecondes:
-            print(f"⚠️ Segment ligne {line_idx} ({segment['speaker']}): durée {duree_ms}ms < {duree_minimale_conservee_millisecondes}ms, skip.")
+            log.warning("Segment ligne %d (%s): duree %dms < %dms, skip.", line_idx, segment['speaker'], duree_ms, duree_minimale_conservee_millisecondes)
             continue
 
         nom_locuteur_slug = _slugify_nom(str(segment["speaker"]))
@@ -322,8 +325,8 @@ def cut_audio_by_diarization(
     with open(chemin_manifeste, "w", encoding="utf-8") as f:
         json.dump(manifeste, f, ensure_ascii=False, indent=2)
 
-    print(f"✅ {len(manifeste)} segments exportés dans {dossier_sortie_segments_audio}")
-    print(f"📝 Manifeste: {chemin_manifeste}")
+    log.info("%d segments exportes dans %s", len(manifeste), dossier_sortie_segments_audio)
+    log.info("Manifeste: %s", chemin_manifeste)
     return manifeste
 
 
