@@ -75,6 +75,9 @@ class Task:
     segment_id: str
     intervenant_index: str
     personnage_id: str
+    # Optionnel : surcharge des images de fond par segment (fonds dynamiques)
+    image_left_path:  str = None
+    image_right_path: str = None
 
 # --- Utils génériques
 
@@ -300,7 +303,28 @@ def _video_has_background(video_path: str) -> bool:
         return True  # En cas d'erreur de vérification, on ne bloque pas
 
 
+def background_for_task(task: "Task") -> str:
+    """
+    Retourne le chemin de l'image de fond pour cette tâche.
+    Priorité :
+      1. task.image_right_path / task.image_left_path (fonds dynamiques par segment)
+      2. IMAGE_RIGHT_PATH / IMAGE_LEFT_PATH (env, comportement classique)
+    """
+    is_martin = task.nom.strip().lower() == "mr martin"
+    if is_martin:
+        path = task.image_right_path or IMAGE_RIGHT_PATH
+    else:
+        path = task.image_left_path or IMAGE_LEFT_PATH
+    abs_path = os.path.abspath(path)
+    if not os.path.exists(abs_path):
+        raise RuntimeError(f"Image de fond introuvable: {abs_path}")
+    if os.path.getsize(abs_path) < 1024:
+        raise RuntimeError(f"Image de fond trop petite / corrompue ({os.path.getsize(abs_path)} octets): {abs_path}")
+    return path
+
+
 def background_for_label(name_label: str) -> str:
+    """Compat legacy — utilisé si pas de Task disponible."""
     path = IMAGE_RIGHT_PATH if name_label.strip().lower() == "mr martin" else IMAGE_LEFT_PATH
     abs_path = os.path.abspath(path)
     if not os.path.exists(abs_path):
@@ -425,7 +449,7 @@ async def _run_task_on_page(context, task: Task):
             await _screenshot(page, "bg_tab_fail", task)
             raise RuntimeError("Impossible d'ouvrir l'onglet Arrière-plan après 3 essais")
 
-        image_path = background_for_label(task.nom)
+        image_path = background_for_task(task)
 
         # Upload du fond avec retry (le file input peut mettre du temps à apparaître)
         bg_uploaded = False

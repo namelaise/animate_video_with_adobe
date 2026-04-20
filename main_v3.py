@@ -1952,18 +1952,23 @@ def run_pipeline_once() -> Tuple[bool, str]:
     if _step_done(state, "background", _left_img, _right_img):
         log.info("⏭️  Étape 7 (Background) — ignorée")
     else:
-        with time_step("7) Génération image de fond + split 9:16"):
+        with time_step("7) Génération images de fond dynamiques + split 9:16"):
             full_txt = get_transcription_file_with_verification(RAW_SEGMENTS_PATH)
             wait_for_internet(label="image generation")
-            # Essaie Gemini (gratuit) en premier, fallback sur OpenAI
+            # Essaie Gemini (gratuit) → génère N fonds dynamiques
             try:
-                generate_image_with_gemini(full_txt)
-                log.info("✅ Image générée via Gemini")
+                generate_dynamic_backgrounds_with_gemini(full_txt, n=N_DYNAMIC_BACKGROUNDS)
+                log.info(f"✅ {N_DYNAMIC_BACKGROUNDS} fonds dynamiques générés via Gemini")
             except Exception as e:
-                log.warning(f"⚠️ Gemini image échoué ({e}) → fallback OpenAI")
+                log.warning(f"⚠️ Gemini fonds dynamiques échoué ({e}) → fallback OpenAI (1 seul fond)")
                 generate_image_with_openai(full_txt)
-            split_background_to_tiktok_pairs()
+            split_all_dynamic_backgrounds()
         _mark_done(state, "background")
+
+    # ── Charger les paires de fonds dynamiques (pour l'étape 8) ──────────────
+    _bg_pairs = split_all_dynamic_backgrounds() if os.path.exists(
+        os.path.join(IMAGES_DIR, "full_background.png")
+    ) else None
 
     # ── 8) Génération vidéos segments (Adobe) ─────────────────────────────────
     # Si l'assemblage final est déjà là → on saute 8 et 9 directement
@@ -1976,14 +1981,16 @@ def run_pipeline_once() -> Tuple[bool, str]:
         if _step_done(state, "animation") and _has_segments:
             log.info("⏭️  Étape 8 (Adobe) — ignorée (segments vidéo présents)")
         else:
-            with time_step("8) Génération vidéos segments (Adobe)"):
+            with time_step("8) Génération vidéos segments (Adobe) avec fonds dynamiques"):
                 wait_for_internet(label="Adobe generation")
                 _adobe_concurrency = int(os.getenv("ADOBE_CONCURRENCY", "8"))
-                log.info("Adobe concurrency: %d onglets", _adobe_concurrency)
+                log.info("Adobe concurrency: %d onglets | fonds: %d",
+                         _adobe_concurrency, len(_bg_pairs) if _bg_pairs else 1)
                 automate_generation_videos(
                     max_threads=_adobe_concurrency,
                     segments_txt_path=ALIGNED_SEGMENTS_PATH,
                     audio_segments_dir=AUDIO_SEGMENTS_DIR,
+                    bg_pairs=_bg_pairs,
                 )
             _mark_done(state, "animation")
 
