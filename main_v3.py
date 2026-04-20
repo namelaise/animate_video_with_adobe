@@ -34,11 +34,13 @@ from segments_processing import (
 )
 from automate_diarization import transcribe_segments_with_diarization
 from tiktok_account_manager import (
-    get_next_account,
-    mark_account_used,
+    get_active_account_id,
+    get_active_account,
     get_access_token,
     get_account_label,
     get_rotation_status,
+    mark_account_used,
+    update_tokens,
 )
 
 load_dotenv()
@@ -536,10 +538,9 @@ def _upload_with_account(
         if rc_r != 0:
             log.error(f"⛔ Refresh échoué pour {label}")
             return False, "token_failed"
-        # Recharger le token frais depuis .env
-        from dotenv import load_dotenv as _ld
-        _ld(override=True)
-        fresh_token = get_access_token(account_id)
+        # Recharger le token depuis le gestionnaire de comptes
+        from tiktok_account_manager import get_access_token as _gat
+        fresh_token = _gat(account_id)
         rc2, out2, err2 = _post(direct=use_direct and bool(caption), tok=fresh_token)
         if rc2 == 0:
             log.info(f"✅ Upload TikTok OK après refresh — {label}")
@@ -567,41 +568,20 @@ def _upload_with_account(
 
 def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable, caption: str = None) -> Tuple[bool, str]:
     """
-    Upload la vidéo en gérant la rotation multi-comptes.
-    Essaie le compte prioritaire d'abord, puis l'autre si le premier échoue
-    pour une raison autre que spam_risk.
+    Upload la vidéo sur le compte actif (dernier compte sélectionné dans le GUI).
     """
     log_path = LOG_DIR / "upload_tiktok.log"
     preflight_mp4_checks(final_mp4)
 
-    rotation = get_rotation_status()
-    log.info(f"🔄 Rotation TikTok : {rotation}")
+    account_id = get_active_account_id()
+    if not account_id:
+        log.error("❌ Aucun compte TikTok configuré. Lance auth_tiktok_token_manager.py")
+        return False, "no_account"
 
-    primary = get_next_account()
-    from tiktok_account_manager import get_available_accounts
-    all_accounts = get_available_accounts()
-    others = [a for a in all_accounts if a != primary]
+    status = get_rotation_status()
+    log.info(f"📱 Compte TikTok actif : {status}")
 
-    # Tentative sur le compte principal
-    ok, reason = _upload_with_account(final_mp4, primary, python_exe, log_path, caption)
-    if ok:
-        return True, reason
-
-    # Si spam_risk ou token_failed définitif → ne pas essayer l'autre compte
-    if reason == "spam_risk":
-        return False, reason
-
-    # Tentative sur les autres comptes disponibles
-    for other_id in others:
-        log.warning(f"⚠️ Compte {primary} échoué ({reason}) → tentative sur {get_account_label(other_id)}")
-        ok2, reason2 = _upload_with_account(final_mp4, other_id, python_exe, log_path, caption)
-        if ok2:
-            return True, reason2
-        if reason2 == "spam_risk":
-            return False, reason2
-
-    log.error("❌ Tous les comptes TikTok ont échoué.")
-    return False, reason
+    return _upload_with_account(final_mp4, account_id, python_exe, log_path, caption)
 
 
 # =========================================================
@@ -1104,32 +1084,218 @@ async def _gemini_generate_image(prompt: str, output_path: str) -> bool:
             await browser.close()
 
 
-def generate_image_with_gemini(script_text: str) -> str:
+# Variations de cadrage/détail pour les images dynamiques
+_BG_VARIATIONS = [
+    "Slightly wider angle, showing more of the room and architectural details.",
+    "Slightly closer framing, emphasizing the main work surface and key objects.",
+    "Same location but with subtle shift in ambient lighting — warmer tone.",
+    "Same location, alternative angle — from the side, revealing more depth.",
+]
+
+N_DYNAMIC_BACKGROUNDS = int(os.getenv("N_DYNAMIC_BACKGROUNDS", "3"))
+
+
+async def _gemini_generate_multiple(prompts: list[str], output_paths: list[str]) -> list[bool]:
     """
-    Génère l'image de fond via Gemini.google.com (gratuit).
-    Retourne le chemin du fichier PNG généré.
-    Lève RuntimeError si échec.
+    Ouvre UN seul navigateur et génère plusieurs images Gemini en séquence.
+    Retourne une liste de bool (succès/échec par image).
     """
-    output_image_path = os.path.join(IMAGES_DIR, "full_background.png")
+    from playwright.async_api import async_playwright
+    results = []
+
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch_persistent_context(
+            user_data_dir=BASE_PROFILE_PATH,
+            executable_path=CHROME_PATH_GEMINI,
+            headless=False,
+            slow_mo=200,
+            args=["--disable-blink-features=AutomationControlled", "--start-maximized"],
+            ignore_default_args=["--enable-automation"],
+        )
+
+        for i, (prompt, output_path) in enumerate(zip(prompts, output_paths)):
+            log.info(f"[Gemini] Image {i+1}/{len(prompts)}...")
+            page = await browser.new_page()
+            await page.add_init_script(
+                "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+            )
+            try:
+                ok = await _gemini_page_generate(page, prompt, output_path)
+                results.append(ok)
+            except Exception as e:
+                log.warning(f"[Gemini] Image {i+1} exception: {e}")
+                results.append(False)
+            finally:
+                await page.close()
+            # Petite pause entre les générations
+            if i < len(prompts) - 1:
+                await asyncio.sleep(3)
+
+        await browser.close()
+
+    return results
+
+
+async def _gemini_page_generate(page, prompt: str, output_path: str) -> bool:
+    """Génère UNE image Gemini sur une page déjà ouverte."""
+    try:
+        await page.goto("https://gemini.google.com", wait_until="domcontentloaded", timeout=30000)
+        await page.wait_for_timeout(3000)
+
+        for sel in ["button:has-text('Continuer')", "button:has-text('Continue')",
+                    "button:has-text('Accepter')", "button:has-text('Accept')"]:
+            try:
+                el = page.locator(sel).first
+                if await el.count() > 0:
+                    await el.click(timeout=3000)
+                    await page.wait_for_timeout(800)
+            except Exception:
+                pass
+
+        input_sel = None
+        for sel in ["[contenteditable='true']", "textarea", "rich-textarea", ".ql-editor"]:
+            try:
+                el = page.locator(sel).first
+                if await el.count() > 0 and await el.is_visible():
+                    input_sel = sel
+                    break
+            except Exception:
+                pass
+
+        if not input_sel:
+            return False
+
+        el = page.locator(input_sel).first
+        await el.click(timeout=5000)
+        await page.wait_for_timeout(500)
+        await page.keyboard.press("Control+a")
+        await page.keyboard.press("Delete")
+        await page.keyboard.type(prompt, delay=15)
+        await page.wait_for_timeout(500)
+        await page.keyboard.press("Enter")
+
+        img_url = None
+        for i in range(18):
+            await page.wait_for_timeout(5000)
+            imgs = await page.evaluate("""
+                () => [...document.querySelectorAll('img')]
+                    .filter(img => {
+                        const src = img.src || '';
+                        return img.naturalWidth > 300 && img.naturalHeight > 300
+                            && !src.includes('avatar') && !src.includes('favicon')
+                            && !src.includes('logo') && !src.includes('icon')
+                            && (src.includes('blob:') || src.includes('googleusercontent')
+                                || src.includes('data:image'));
+                    })
+                    .map(img => ({src: img.src, w: img.naturalWidth, h: img.naturalHeight}))
+            """)
+            if imgs:
+                best = max(imgs, key=lambda x: x['w'] * x['h'])
+                img_url = best['src']
+                break
+
+        if not img_url:
+            return False
+
+        # Tenter bouton download
+        download_selectors = [
+            "button[aria-label*='download' i]",
+            "button[aria-label*='télécharger' i]",
+            "[data-test-id='download-button']",
+            "message-actions button[aria-label*='load' i]",
+        ]
+        for sel in download_selectors:
+            try:
+                el = page.locator(sel).first
+                if await el.count() > 0 and await el.is_visible(timeout=2000):
+                    async with page.expect_download(timeout=15000) as dl_info:
+                        await el.click(timeout=3000)
+                    dl = await dl_info.value
+                    await dl.save_as(output_path)
+                    return True
+            except Exception:
+                continue
+
+        # Fallback fetch JS
+        try:
+            img_data = await page.evaluate(f"""
+                async () => {{
+                    const r = await fetch('{img_url}');
+                    const buf = await r.arrayBuffer();
+                    const bytes = new Uint8Array(buf);
+                    let b = '';
+                    for (let i = 0; i < bytes.length; i++) b += String.fromCharCode(bytes[i]);
+                    return btoa(b);
+                }}
+            """)
+            import base64 as _b64
+            with open(output_path, "wb") as f:
+                f.write(_b64.b64decode(img_data))
+            return True
+        except Exception:
+            pass
+
+        await page.screenshot(path=output_path, full_page=False)
+        return True
+
+    except Exception as e:
+        log.warning(f"[Gemini] Page exception: {e}")
+        return False
+
+
+def generate_dynamic_backgrounds_with_gemini(script_text: str, n: int = N_DYNAMIC_BACKGROUNDS) -> list[str]:
+    """
+    Génère N images de fond légèrement différentes via Gemini en un seul navigateur.
+    Retourne la liste des chemins générés (au moins 1 requis).
+
+    Les images sont nommées : full_background_0.png, full_background_1.png, ...
+    L'image 0 est aussi copiée comme full_background.png (compat).
+    """
     prompt_text = build_background_prompt(script_text)
 
-    # Condensé du prompt pour Gemini (max ~500 chars, évite le prompt ultra-long)
-    gemini_prompt = (
-        "Generate a photorealistic background image (no people, no characters) for a TikTok video scene. "
-        "The image should be a clean, realistic environment ready for characters to be added later. "
-        "Format: wide landscape 3:2. No text, no watermark, no humans.\n\n"
-        + "\n".join(
-            line for line in prompt_text.split("\n")
-            if any(kw in line for kw in ["Location:", "Topic:", "Atmosphere:", "Key objects:", "Script à analyser"])
-        )[:500]
+    # Extraire le contexte visuel condensé (lignes Location/Topic/etc.)
+    context_lines = "\n".join(
+        line for line in prompt_text.split("\n")
+        if any(kw in line for kw in ["Location:", "Topic:", "Atmosphere:", "Key objects:"])
+    )[:400]
+
+    base_prompt = (
+        "Generate a photorealistic background image (absolutely no people, no characters, no humans) "
+        "for a TikTok vertical video. Clean realistic environment for adding animated characters later. "
+        "Wide landscape format, no text, no watermark.\n\n"
+        + context_lines
     )
 
-    log.info("[Gemini] Génération image de fond...")
-    success = asyncio.run(_gemini_generate_image(gemini_prompt, output_image_path))
-    if not success or not os.path.exists(output_image_path):
-        raise RuntimeError("Gemini: génération image échouée")
-    log.info(f"[Gemini] Image générée: {output_image_path}")
-    return output_image_path
+    # Construire N prompts avec variations
+    prompts = [base_prompt]
+    for i in range(1, n):
+        variation = _BG_VARIATIONS[(i - 1) % len(_BG_VARIATIONS)]
+        prompts.append(f"{base_prompt}\n\nVariation: {variation}")
+
+    output_paths = [
+        os.path.join(IMAGES_DIR, f"full_background_{i}.png") for i in range(n)
+    ]
+
+    log.info(f"[Gemini] Génération de {n} fonds dynamiques...")
+    results = asyncio.run(_gemini_generate_multiple(prompts, output_paths))
+
+    generated = [p for p, ok in zip(output_paths, results) if ok and os.path.exists(p)]
+    if not generated:
+        raise RuntimeError("Gemini: aucune image de fond générée")
+
+    # Copier l'image 0 comme full_background.png (compat existante)
+    import shutil as _shutil
+    _shutil.copy2(generated[0], os.path.join(IMAGES_DIR, "full_background.png"))
+    log.info(f"[Gemini] {len(generated)}/{n} fonds générés: {[os.path.basename(p) for p in generated]}")
+    return generated
+
+
+def generate_image_with_gemini(script_text: str) -> str:
+    """
+    Point d'entrée simple : génère les fonds dynamiques et retourne le chemin du premier.
+    """
+    generated = generate_dynamic_backgrounds_with_gemini(script_text)
+    return generated[0]
 
 
 def generate_image_with_openai(script_text: str) -> str:
@@ -1175,27 +1341,85 @@ def center_crop_to_ratio(img: Image.Image, target_ratio: float) -> Image.Image:
         return img.crop((0, top, w, top + new_h))
 
 
-def split_background_to_tiktok_pairs() -> Tuple[str, str]:
-    bg_path = os.path.join(IMAGES_DIR, "full_background.png")
+def _split_one_background(bg_path: str, idx: int) -> Tuple[str, str]:
+    """Split une image de fond en paire gauche/droite 9:16."""
     img = Image.open(bg_path).convert("RGB")
-
     img = center_crop_to_ratio(img, 9 / 8)
     img = img.resize((1152, 1024), Image.Resampling.LANCZOS)
 
-    left_img = img.crop((0, 0, 576, 1024))
-    right_img = img.crop((576, 0, 1152, 1024))
+    left_img  = img.crop((0, 0, 576, 1024)).resize((540, 960), Image.Resampling.LANCZOS)
+    right_img = img.crop((576, 0, 1152, 1024)).resize((540, 960), Image.Resampling.LANCZOS)
 
-    left_img = left_img.resize((540, 960), Image.Resampling.LANCZOS)
-    right_img = right_img.resize((540, 960), Image.Resampling.LANCZOS)
+    left_path  = os.path.join(LEFT_IMG_DIR,  f"left_{idx}.png")
+    right_path = os.path.join(RIGHT_IMG_DIR, f"right_{idx}.png")
 
-    left_path = os.path.join(LEFT_IMG_DIR, "left_0.png")
-    right_path = os.path.join(RIGHT_IMG_DIR, "right_0.png")
-
-    left_img.save(left_path, format="PNG", optimize=True)
+    left_img.save(left_path,  format="PNG", optimize=True)
     right_img.save(right_path, format="PNG", optimize=True)
-
-    log.info("Deux images 9:16 générées (gauche/droite) avec crop propre.")
     return left_path, right_path
+
+
+def split_background_to_tiktok_pairs() -> Tuple[str, str]:
+    """Compat : split l'image principale (index 0)."""
+    bg_path = os.path.join(IMAGES_DIR, "full_background.png")
+    left, right = _split_one_background(bg_path, 0)
+    log.info("Images 9:16 générées (gauche/droite) avec crop propre.")
+    return left, right
+
+
+def split_all_dynamic_backgrounds() -> list[Tuple[str, str]]:
+    """
+    Split toutes les images full_background_N.png trouvées dans IMAGES_DIR.
+    Retourne la liste des paires (left_N.png, right_N.png).
+    """
+    pairs: list[Tuple[str, str]] = []
+    idx = 0
+    while True:
+        bg_path = os.path.join(IMAGES_DIR, f"full_background_{idx}.png")
+        if not os.path.exists(bg_path):
+            break
+        try:
+            left, right = _split_one_background(bg_path, idx)
+            pairs.append((left, right))
+            idx += 1
+        except Exception as e:
+            log.warning(f"Split background {idx} échoué: {e}")
+            break
+    if not pairs:
+        # Fallback sur full_background.png classique
+        left, right = split_background_to_tiktok_pairs()
+        pairs.append((left, right))
+    log.info(f"[Background] {len(pairs)} paires gauche/droite générées")
+    return pairs
+
+
+def assign_backgrounds_to_segments(
+    segments: List[Dict],
+    pairs: list[Tuple[str, str]],
+) -> Dict[str, int]:
+    """
+    Assigne un index de fond à chaque segment.
+    Règle : on change de fond à chaque changement de personnage.
+    Retourne un dict {speaker_label: bg_index}.
+    """
+    if len(pairs) <= 1:
+        return {}  # 1 seul fond → comportement d'origine
+
+    # Collecter les locuteurs dans l'ordre d'apparition (dédupliqués)
+    speakers_ordered: List[str] = []
+    seen: set = set()
+    for seg in segments:
+        label = seg.get("label", "")
+        if label not in seen:
+            seen.add(label)
+            speakers_ordered.append(label)
+
+    # Attribuer un fond différent à chaque locuteur en round-robin
+    mapping: Dict[str, int] = {}
+    for i, speaker in enumerate(speakers_ordered):
+        mapping[speaker] = i % len(pairs)
+
+    log.info(f"[Background] Mapping fonds dynamiques: {mapping}")
+    return mapping
 
 
 # =========================================================
@@ -1302,6 +1526,7 @@ def automate_generation_videos(
     max_threads: int = 4,
     segments_txt_path: str | None = None,
     audio_segments_dir: str | None = None,
+    bg_pairs: list[Tuple[str, str]] | None = None,
 ):
     segments_txt_path = segments_txt_path or ALIGNED_SEGMENTS_PATH
     audio_segments_dir = audio_segments_dir or AUDIO_SEGMENTS_DIR
@@ -1322,6 +1547,11 @@ def automate_generation_videos(
     if not mp3_files:
         log.error("Aucun segment audio .mp3 trouvé.")
         return
+
+    # Mapping fonds dynamiques (vide si 1 seul fond)
+    bg_assignment: Dict[str, int] = {}
+    if bg_pairs and len(bg_pairs) > 1:
+        bg_assignment = assign_backgrounds_to_segments(lines, bg_pairs)
 
     audit.info("=== ÉTAPE 8: GÉNÉRATION VIDÉOS ADOBE ===")
     audit.info(f"Lignes texte: {len(lines)} | Fichiers mp3: {len(mp3_files)}")
@@ -1382,6 +1612,14 @@ def automate_generation_videos(
         )
         if abs(drift_ms) > 500:
             audit.warning(f"    DRIFT IMPORTANT: {drift_ms:+.0f}ms sur seg={seg_idx}")
+
+        # Fond dynamique pour ce segment
+        bg_idx = bg_assignment.get(label, 0) if bg_assignment else 0
+        left_path  = bg_pairs[bg_idx][0] if (bg_pairs and bg_idx < len(bg_pairs)) else None
+        right_path = bg_pairs[bg_idx][1] if (bg_pairs and bg_idx < len(bg_pairs)) else None
+        if bg_assignment and label in bg_assignment:
+            audit.info(f"    FOND dynamique: bg_{bg_idx} → left={os.path.basename(left_path or '')}")
+
         tasks.append(
             Task(
                 audio_path=mp3_path,
@@ -1390,6 +1628,8 @@ def automate_generation_videos(
                 segment_id=str(seg_idx),
                 intervenant_index=str(_speaker_index_hint(label)),
                 personnage_id=puppet,
+                image_left_path=left_path,
+                image_right_path=right_path,
             )
         )
 

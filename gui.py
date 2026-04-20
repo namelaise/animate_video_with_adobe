@@ -32,6 +32,7 @@ MATCHING_MODE_FILE     = BASE_DIR / "matching_mode.json"
 MATCHING_REQUEST_FILE  = BASE_DIR / "matching_request.json"
 MATCHING_RESPONSE_FILE = BASE_DIR / "matching_response.json"
 GUI_CONFIG_FILE        = BASE_DIR / "gui_config.json"
+ACCOUNTS_FILE          = BASE_DIR / "config" / "tiktok_accounts.json"
 VENV_PYTHON = BASE_DIR / "venv" / "Scripts" / "python.exe"
 PYTHON = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
 DEFAULT_DAILY_LIMIT = 5
@@ -713,34 +714,7 @@ def main(page: ft.Page):
         toast("Quota reinitialise", "success")
         refresh_all()
 
-    def refresh_token(e=None):
-        _no_win = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        def do():
-            page.run_thread(lambda: _start_action_log("Refresh token TikTok"))
-            proc = subprocess.Popen(
-                [PYTHON, "auth_tiktok_refresh.py"], cwd=str(BASE_DIR),
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, bufsize=1, creationflags=_no_win,
-            )
-            _stream_proc_to_log(proc)
-            if proc.returncode == 0:
-                page.run_thread(lambda: (_end_action_log(True, "Token rafraîchi"),
-                                          toast("Token rafraichi", "success"), refresh_all()))
-            else:
-                page.run_thread(lambda: _append_log_lines(
-                    ["[INFO] Refresh échoué — ouverture navigateur pour re-auth..."]))
-                proc2 = subprocess.Popen(
-                    [PYTHON, "auth_tiktok_token_manager.py"], cwd=str(BASE_DIR),
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, bufsize=1, creationflags=_no_win,
-                )
-                _stream_proc_to_log(proc2)
-                ok2 = proc2.returncode == 0
-                msg2  = "Re-auth réussie" if ok2 else "Échec re-auth"
-                kind2 = "success" if ok2 else "error"
-                page.run_thread(lambda: (_end_action_log(ok2, msg2),
-                                          toast(msg2, kind2), refresh_all()))
-        threading.Thread(target=do, daemon=True).start()
+    # refresh_token est maintenant refresh_token_active (défini dans le bloc accounts)
 
     def post_video(vdir):
         vp = vdir / "video_final.mp4"
@@ -1188,6 +1162,242 @@ def main(page: ft.Page):
 
         return changed
 
+    # ── TikTok Accounts panel ─────────────────────────────
+    accounts_col = ft.Column([], spacing=6)
+
+    def _load_accounts_data() -> tuple[list[dict], str | None]:
+        """Lit config/tiktok_accounts.json directement (sans importer le module)."""
+        try:
+            if ACCOUNTS_FILE.exists():
+                data = json.loads(ACCOUNTS_FILE.read_text(encoding="utf-8"))
+                accounts_list = list(data.get("accounts", {}).values())
+                active_id = data.get("active_account_id")
+                return accounts_list, active_id
+        except Exception:
+            pass
+        return [], None
+
+    def _set_active_account_file(account_id: str) -> None:
+        """Met à jour l'active_account_id directement dans le fichier JSON."""
+        try:
+            if ACCOUNTS_FILE.exists():
+                data = json.loads(ACCOUNTS_FILE.read_text(encoding="utf-8"))
+                data["active_account_id"] = account_id
+                ACCOUNTS_FILE.write_text(
+                    json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+        except Exception:
+            pass
+
+    def build_account_card(acc: dict, is_active: bool) -> ft.Container:
+        acc_id       = acc.get("id", "?")
+        username     = acc.get("username") or acc.get("display_name") or acc_id
+        display_name = acc.get("display_name") or username
+        avatar_local = acc.get("avatar_local", "")
+        uploads      = acc.get("upload_count", 0)
+
+        # Avatar
+        if avatar_local and Path(avatar_local).exists():
+            avatar_widget = ft.Container(
+                content=ft.Image(
+                    src=str(Path(BASE_DIR / avatar_local) if not Path(avatar_local).is_absolute() else Path(avatar_local)),
+                    width=36, height=36,
+                    fit=ft.BoxFit.COVER,
+                    border_radius=18,
+                ),
+                width=36, height=36,
+                border_radius=18,
+                clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+                border=ft.Border.all(2, "#8b5cf6") if is_active else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+            )
+        else:
+            avatar_widget = ft.Container(
+                content=ft.Icon(ft.Icons.ACCOUNT_CIRCLE, size=22,
+                                color="#8b5cf6" if is_active else OUTLINE),
+                width=36, height=36,
+                border_radius=18,
+                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                border=ft.Border.all(2, "#8b5cf6") if is_active else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                alignment=ft.Alignment.CENTER,
+            )
+
+        def on_switch(e, aid=acc_id):
+            _set_active_account_file(aid)
+            refresh_accounts()
+            toast(f"Compte actif : {username}", "success")
+
+        def on_remove(e, aid=acc_id):
+            def confirm(ev):
+                _close_dialog(dlg)
+                try:
+                    if ACCOUNTS_FILE.exists():
+                        data = json.loads(ACCOUNTS_FILE.read_text(encoding="utf-8"))
+                        data["accounts"].pop(aid, None)
+                        if data.get("active_account_id") == aid:
+                            remaining = list(data["accounts"].keys())
+                            data["active_account_id"] = remaining[0] if remaining else None
+                        ACCOUNTS_FILE.write_text(
+                            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+                        )
+                    # Supprimer l'avatar local
+                    avatar_path = BASE_DIR / "config" / "avatars" / f"{aid}.jpg"
+                    if avatar_path.exists():
+                        avatar_path.unlink()
+                except Exception as ex:
+                    toast(f"Erreur suppression : {ex}", "error")
+                refresh_accounts()
+                toast(f"Compte {username} supprimé", "warning")
+
+            def cancel(ev):
+                _close_dialog(dlg)
+
+            dlg = ft.AlertDialog(
+                title=ft.Text("Supprimer ce compte ?"),
+                content=ft.Text(f"Supprimer {username} de la liste des comptes ?"),
+                actions=[
+                    ft.TextButton("Annuler", on_click=cancel),
+                    ft.FilledButton("Supprimer", on_click=confirm,
+                                    style=ft.ButtonStyle(bgcolor=ERROR_C, color="white")),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+            _open_dialog(dlg)
+
+        active_badge = ft.Container(
+            content=ft.Row([
+                ft.Icon(ft.Icons.CHECK_CIRCLE, size=10, color="#8b5cf6"),
+                ft.Text("actif", size=9, color="#8b5cf6"),
+            ], spacing=2),
+            bgcolor="#1a1040",
+            border_radius=6,
+            padding=ft.Padding.symmetric(horizontal=4, vertical=1),
+            visible=is_active,
+        )
+
+        card = ft.Container(
+            content=ft.Row([
+                # Avatar
+                ft.GestureDetector(
+                    content=avatar_widget,
+                    on_tap=on_switch,
+                    mouse_cursor=ft.MouseCursor.CLICK,
+                ),
+                # Infos
+                ft.Column([
+                    ft.Row([
+                        ft.Text(
+                            username[:18],
+                            size=12,
+                            weight=ft.FontWeight.BOLD if is_active else None,
+                            color="white" if is_active else ON_SURFACE,
+                            expand=True,
+                        ),
+                        active_badge,
+                    ], spacing=4),
+                    ft.Text(
+                        f"{uploads} upload{'s' if uploads != 1 else ''}",
+                        size=10, color=OUTLINE,
+                    ),
+                ], spacing=1, expand=True),
+                # Bouton supprimer
+                ft.IconButton(
+                    ft.Icons.CLOSE,
+                    icon_size=14,
+                    icon_color=OUTLINE,
+                    on_click=on_remove,
+                    style=ft.ButtonStyle(padding=ft.Padding.all(0)),
+                    tooltip="Supprimer ce compte",
+                ),
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH if is_active else ft.Colors.SURFACE_CONTAINER,
+            border_radius=8,
+            padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+            border=ft.Border.all(1, "#8b5cf6") if is_active else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+            on_click=on_switch,
+            ink=True,
+        )
+        return card
+
+    def connect_new_account(e=None):
+        """Lance l'auth TikTok pour ajouter un nouveau compte."""
+        _no_win = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        def do():
+            page.run_thread(lambda: _start_action_log("Connexion nouveau compte TikTok"))
+            proc = subprocess.Popen(
+                [PYTHON, "auth_tiktok_token_manager.py"], cwd=str(BASE_DIR),
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, bufsize=1, creationflags=_no_win,
+            )
+            _stream_proc_to_log(proc)
+            ok = proc.returncode == 0
+            msg  = "Compte connecté avec succès !" if ok else "Connexion échouée"
+            kind = "success" if ok else "error"
+            page.run_thread(lambda: (
+                _end_action_log(ok, msg),
+                toast(msg, kind),
+                refresh_accounts(),
+                refresh_all(),
+            ))
+        threading.Thread(target=do, daemon=True).start()
+
+    def refresh_token_active(e=None):
+        """Refresh le token du compte actif."""
+        accounts_list, active_id = _load_accounts_data()
+        account_arg = active_id or "acc_1"
+        _no_win = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        def do():
+            page.run_thread(lambda: _start_action_log(f"Refresh token ({account_arg})"))
+            proc = subprocess.Popen(
+                [PYTHON, "auth_tiktok_refresh.py", "--account", account_arg],
+                cwd=str(BASE_DIR),
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, bufsize=1, creationflags=_no_win,
+            )
+            _stream_proc_to_log(proc)
+            if proc.returncode == 0:
+                page.run_thread(lambda: (
+                    _end_action_log(True, "Token rafraîchi"),
+                    toast("Token rafraichi", "success"),
+                    refresh_accounts(),
+                ))
+            else:
+                page.run_thread(lambda: _append_log_lines(
+                    ["[INFO] Refresh échoué — ouverture navigateur pour re-auth..."]))
+                proc2 = subprocess.Popen(
+                    [PYTHON, "auth_tiktok_token_manager.py"], cwd=str(BASE_DIR),
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, bufsize=1, creationflags=_no_win,
+                )
+                _stream_proc_to_log(proc2)
+                ok2 = proc2.returncode == 0
+                page.run_thread(lambda: (
+                    _end_action_log(ok2, "Re-auth réussie" if ok2 else "Échec re-auth"),
+                    toast("Re-auth réussie" if ok2 else "Échec re-auth",
+                          "success" if ok2 else "error"),
+                    refresh_accounts(),
+                ))
+        threading.Thread(target=do, daemon=True).start()
+
+    def refresh_accounts():
+        """Reconstruit la liste des comptes dans la sidebar."""
+        accounts_list, active_id = _load_accounts_data()
+        accounts_col.controls.clear()
+
+        if not accounts_list:
+            accounts_col.controls.append(
+                ft.Text("Aucun compte connecté", size=11, color=OUTLINE,
+                        italic=True)
+            )
+        else:
+            for acc in accounts_list:
+                is_active = acc.get("id") == active_id
+                accounts_col.controls.append(build_account_card(acc, is_active))
+
+        try:
+            page.update()
+        except Exception:
+            pass
+
     # ── Matching mode toggle ──────────────────────────────
     def _write_matching_mode(mode: str):
         try:
@@ -1429,21 +1639,34 @@ def main(page: ft.Page):
                     ft.Text("Mr Martin", size=22, weight=ft.FontWeight.BOLD),
                     ft.Text("Video Automation", size=12, color=OUTLINE),
                 ], spacing=2),
-                padding=ft.Padding.only(bottom=20),
+                padding=ft.Padding.only(bottom=12),
             ),
             ft.Divider(height=1, color=ft.Colors.OUTLINE_VARIANT),
 
-            # Scheduler
-            ft.Text("AUTOMATISATION", size=10, weight=ft.FontWeight.BOLD,
-                     color=OUTLINE),
+            # ── Comptes TikTok ────────────────────────────
+            ft.Text("COMPTES TIKTOK", size=10, weight=ft.FontWeight.BOLD, color=OUTLINE),
+            accounts_col,
+            ft.FilledTonalButton(
+                "Connecter un compte",
+                icon=ft.Icons.ADD,
+                on_click=connect_new_account,
+                style=ft.ButtonStyle(
+                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                    color="#8b5cf6",
+                ),
+                width=240,
+            ),
+            ft.Divider(height=1, color=ft.Colors.OUTLINE_VARIANT),
+
+            # ── Scheduler ────────────────────────────────
+            ft.Text("AUTOMATISATION", size=10, weight=ft.FontWeight.BOLD, color=OUTLINE),
             ft.Row([start_btn, stop_btn], spacing=8),
             matching_mode_btn,
             _conc_row,
             ft.Divider(height=1, color=ft.Colors.OUTLINE_VARIANT),
 
-            # Actions
-            ft.Text("ACTIONS", size=10, weight=ft.FontWeight.BOLD,
-                     color=OUTLINE),
+            # ── Actions ───────────────────────────────────
+            ft.Text("ACTIONS", size=10, weight=ft.FontWeight.BOLD, color=OUTLINE),
 
             ft.ListTile(
                 leading=ft.Icon(ft.Icons.SEARCH, size=20),
@@ -1461,7 +1684,7 @@ def main(page: ft.Page):
                 leading=ft.Icon(ft.Icons.KEY, size=20),
                 title=ft.Text("Rafraichir le token", size=13),
                 subtitle=ft.Text("Renouvelle l'acces TikTok", size=11),
-                on_click=refresh_token, dense=True,
+                on_click=refresh_token_active, dense=True,
             ),
             ft.ListTile(
                 leading=ft.Icon(ft.Icons.UPLOAD, size=20, color=SUCCESS),
@@ -1471,6 +1694,7 @@ def main(page: ft.Page):
             ),
             ft.Divider(height=1, color=ft.Colors.OUTLINE_VARIANT),
 
+            # ── Outils ────────────────────────────────────
             ft.Text("OUTILS", size=10, weight=ft.FontWeight.BOLD, color=OUTLINE),
 
             ft.ListTile(
@@ -1511,7 +1735,7 @@ def main(page: ft.Page):
                 padding=ft.Padding.only(top=8),
             ),
         ], spacing=8, scroll=ft.ScrollMode.AUTO, expand=True),
-        width=280,
+        width=290,
         bgcolor=ft.Colors.SURFACE_CONTAINER,
         padding=ft.Padding.all(20),
     )
@@ -1551,6 +1775,7 @@ def main(page: ft.Page):
                 _refresh_matching_btn()
         except Exception:
             pass
+        refresh_accounts()
         refresh_all()
         on_new_generation()
         start_scheduler()
@@ -1560,17 +1785,23 @@ def main(page: ft.Page):
     # Periodic refresh
     import time
     def refresh_loop():
-        last_full_refresh = 0
+        last_full_refresh   = 0
+        last_accounts_refresh = 0
         while True:
             time.sleep(2)
             try:
                 changed = tail_logs()
                 needs_update = changed
-                # Refresh stats every 15s (pas trop souvent)
                 now = time.time()
+                # Refresh stats toutes les 15s
                 if now - last_full_refresh >= 15:
                     refresh_all()
                     last_full_refresh = now
+                    needs_update = True
+                # Refresh comptes toutes les 30s (avatar download async, etc.)
+                if now - last_accounts_refresh >= 30:
+                    refresh_accounts()
+                    last_accounts_refresh = now
                     needs_update = True
                 if needs_update:
                     page.update()

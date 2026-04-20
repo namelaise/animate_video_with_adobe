@@ -188,15 +188,28 @@ def main():
         json.dump(tok, f, ensure_ascii=False, indent=2)
     log(f"Tokens sauvegardes -> {TOKENS_JSON}")
 
-    # Met à jour .env
+    # Met à jour .env (rétro-compat)
     update_env_file("TIKTOK_USER_ACCESS_TOKEN", access_token)
     log("TIKTOK_USER_ACCESS_TOKEN mis à jour dans .env")
     if refresh_token:
         update_env_file("TIKTOK_USER_REFRESH_TOKEN", refresh_token)
         log("TIKTOK_USER_REFRESH_TOKEN mis à jour dans .env")
 
-    print("\nOK. Tu peux lancer:")
-    print("python main.py --post-draft --draft-poll")
+    # ── Enregistrement dans le gestionnaire de comptes multi-compte ───────────
+    try:
+        from tiktok_account_manager import add_or_update_account, set_active_account
+        open_id = (tok.get("open_id") or "").strip()
+        acc_id = add_or_update_account(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            open_id=open_id,
+        )
+        set_active_account(acc_id)
+        log(f"✅ Compte enregistré dans le gestionnaire : {acc_id} (actif)")
+    except Exception as e:
+        log(f"[WARN] Enregistrement compte manager échoué (non bloquant): {e}")
+
+    print("\nOK. Nouveau compte enregistré et activé.")
 
 if __name__ == "__main__":
     main()
