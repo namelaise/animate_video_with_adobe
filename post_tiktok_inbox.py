@@ -48,8 +48,9 @@ def human_bytes(n: int) -> str:
             return f"{f:.1f}{u}"
         f /= 1024
 
-def ensure_token() -> str:
-    tok = (os.getenv("TIKTOK_USER_ACCESS_TOKEN") or "").strip()
+def ensure_token(override: str | None = None) -> str:
+    """Retourne le token à utiliser. override prend la priorité sur l'env."""
+    tok = (override or os.getenv("TIKTOK_USER_ACCESS_TOKEN") or "").strip()
     if not tok:
         raise SystemExit("[ERR] TIKTOK_USER_ACCESS_TOKEN manquant dans .env (lance d'abord l'auth/refresh).")
     return tok
@@ -285,6 +286,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--video", required=True, help="Chemin MP4 à uploader/poster")
     ap.add_argument("--poll", action="store_true", help="Interroger le statut après upload")
+    ap.add_argument("--token", type=str, default=None, help="Token d'accès TikTok (surpasse TIKTOK_USER_ACCESS_TOKEN)")
 
     # Options de publication directe
     ap.add_argument("--direct", action="store_true", help="Poster directement (sinon: upload en brouillon Inbox)")
@@ -304,7 +306,7 @@ def main():
 
     args = ap.parse_args()
 
-    token = ensure_token()
+    token = ensure_token(override=args.token)
     video_path = Path(args.video)
     if not video_path.exists():
         raise SystemExit(f"[ERR] Fichier introuvable: {video_path}")

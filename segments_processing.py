@@ -25,6 +25,30 @@ from openai import OpenAI
 log = logging.getLogger("pipeline")
 
 
+# ─────────────────────────────────────────────
+# Claude CLI helper
+# ─────────────────────────────────────────────
+
+def _call_claude_cli(prompt: str, timeout: int = 180) -> str:
+    """
+    Appelle Claude CLI (couvert par l'abonnement).
+    Lève RuntimeError si le CLI n'est pas disponible ou retourne une erreur.
+    """
+    result = subprocess.run(
+        ["claude", "-p", prompt, "--output-format", "text"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Claude CLI erreur (code {result.returncode}): {result.stderr.strip()[:300]}")
+    output = result.stdout.strip()
+    if not output:
+        raise RuntimeError("Claude CLI: réponse vide")
+    return output
+
+
 # -----------------------------
 # Expressions régulières & util
 # -----------------------------
@@ -62,17 +86,14 @@ def rewrite_transcript_with_intervenants_gpt(
     Écrit la sortie dans `dossier_sortie/nom_fichier_sortie` et retourne le chemin.
     """
 
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    modele = modele_openai or os.getenv("OPENAI_MODEL", "gpt-5")
-
-    system_msg = (
+    PROMPT_SYSTEM = (
         "Tu es un transformateur de texte ULTRA STRICT. "
         "Tu réécris un fichier de dialogues diarisation sans RIEN changer "
         "à part le nom du locuteur. "
         "Tu es DÉTERMINISTE : à instructions identiques, ta sortie doit rester identique."
-        )
+    )
 
-    user_msg = f"""
+    PROMPT_USER = f"""
     Tu vas réécrire le fichier suivant, SANS RIEN MODIFIER hormis le nom du locuteur.
 
     Format de chaque ligne (ne surtout pas changer) :
@@ -84,7 +105,7 @@ def rewrite_transcript_with_intervenants_gpt(
     - homme N
     - femme N
     où N = 1, 2, 3, … (numérotation par ORDRE D’APPARITION et SÉPARÉMENT pour chaque genre).
-    Exemple : premières apparitions successives → 'homme 1', 'femme 1', 'femme 2', 'homme 2', etc.
+    Exemple : premières apparitions successives → ‘homme 1’, ‘femme 1’, ‘femme 2’, ‘homme 2’, etc.
     ⚠️ IMPORTANT : chaque **nouvelle personne** doit créer un nouveau numéro, même si la diarisation a réutilisé un SPEAKER déjà existant.
     Les étiquettes SPKA, SPKB… sont uniquement indicatives et NE DOIVENT PAS limiter ton raisonnement.
 
@@ -141,14 +162,14 @@ def rewrite_transcript_with_intervenants_gpt(
     ENTRÉE
     [0.00 → 1.00] SPKA : Bonjour.
     [1.00 → 2.00] SPKB : Oui bonjour.
-    [2.00 → 3.00] SPKA : Je vais vous couper l'électricité pour le climat.
+    [2.00 → 3.00] SPKA : Je vais vous couper l’électricité pour le climat.
     [3.00 → 4.00] SPKB : Je vous passe ma collègue.
     [4.00 → 5.00] SPKB : Allô ?
 
     SORTIE
     [0.00 → 1.00] Mr Martin : Bonjour.
     [1.00 → 2.00] femme 1 : Oui bonjour.
-    [2.00 → 3.00] Mr Martin : Je vais vous couper l'électricité pour le climat.
+    [2.00 → 3.00] Mr Martin : Je vais vous couper l’électricité pour le climat.
     [3.00 → 4.00] femme 1 : Je vous passe ma collègue.
     [4.00 → 5.00] femme 2 : Allô ?
 
@@ -157,18 +178,31 @@ def rewrite_transcript_with_intervenants_gpt(
     === FIN ===
     """.strip()
 
-    # Appel SANS 'temperature' (gpt-5 ne la supporte pas)
-    reponse = client.chat.completions.create(
-        model=modele,
-        messages=[
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg},
-        ],
-    )
+    texte_modele = None
 
-    texte_modele = (reponse.choices[0].message.content or "").strip()
+    # ── Tentative 1 : Claude CLI (couvert par l’abonnement) ───────────────────
+    try:
+        full_prompt = f"{PROMPT_SYSTEM}\n\n{PROMPT_USER}\n\nSors UNIQUEMENT le fichier réécrit, sans explication ni balise."
+        texte_modele = _call_claude_cli(full_prompt, timeout=180)
+        log.info("Réécriture intervenants via Claude CLI")
+    except Exception as e:
+        log.warning("Claude CLI indisponible pour réécriture intervenants (%s) → fallback OpenAI", e)
 
-    # Si jamais le modèle renvoie un bloc ```…```, on l'extrait proprement
+    # ── Tentative 2 : OpenAI (fallback) ──────────────────────────────────────
+    if texte_modele is None:
+        modele = modele_openai or os.getenv("OPENAI_MODEL", "gpt-5")
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        reponse = client.chat.completions.create(
+            model=modele,
+            messages=[
+                {"role": "system", "content": PROMPT_SYSTEM},
+                {"role": "user",   "content": PROMPT_USER},
+            ],
+        )
+        texte_modele = (reponse.choices[0].message.content or "").strip()
+        log.info("Réécriture intervenants via OpenAI (%s)", modele)
+
+    # Si le modèle renvoie un bloc ```…```, on l’extrait proprement
     bloc = re.search(r"```(?:\w+)?\s*([\s\S]*?)\s*```", texte_modele)
     texte_rewrite = bloc.group(1).strip() if bloc else texte_modele
 

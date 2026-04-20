@@ -33,6 +33,13 @@ from segments_processing import (
     cut_audio_by_diarization,
 )
 from automate_diarization import transcribe_segments_with_diarization
+from tiktok_account_manager import (
+    get_next_account,
+    mark_account_used,
+    get_access_token,
+    get_account_label,
+    get_rotation_status,
+)
 
 load_dotenv()
 
@@ -202,6 +209,30 @@ def wait_for_internet(poll_every=5, label=""):
         log.info(f"🌐 Internet revenu — reprise ({label})")
 
 
+# =========================================================
+# CLAUDE CLI HELPER
+# =========================================================
+
+def _call_claude_cli(prompt: str, timeout: int = 180) -> str:
+    """
+    Appelle Claude CLI (couvert par l'abonnement).
+    Lève RuntimeError si le CLI n'est pas disponible ou retourne une erreur.
+    """
+    result = subprocess.run(
+        ["claude", "-p", prompt, "--output-format", "text"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Claude CLI erreur (code {result.returncode}): {result.stderr.strip()[:300]}")
+    output = result.stdout.strip()
+    if not output:
+        raise RuntimeError("Claude CLI: réponse vide")
+    return output
+
+
 def run_cmd_capture(args: List[str], log_path: Path, env: dict | None = None, cwd: str | None = None):
     started = datetime.now().isoformat(timespec="seconds")
     cmd_str = shlex.join(args)
@@ -255,8 +286,8 @@ def preflight_mp4_checks(path: str) -> None:
 
 def generate_tiktok_description(transcript_path: str) -> str:
     """
-    Genere une description TikTok a partir de la transcription :
-    2 phrases max + hashtags contextuels + #mrmartin #canular
+    Genere une description TikTok a partir de la transcription.
+    Essaie Claude CLI en premier (abonnement), fallback sur OpenAI gpt-4o-mini.
     """
     try:
         segments = parse_segments_with_speakers(transcript_path)
@@ -264,39 +295,51 @@ def generate_tiktok_description(transcript_path: str) -> str:
             log.warning("Aucun segment pour generer la description, fallback.")
             return "#mrmartin #canular #prank"
 
-        # Construire un resume du dialogue (max 2000 chars pour le prompt)
         dialogue_text = "\n".join(
             f"{s['label']}: {s['text']}" for s in segments
         )[:2000]
 
-        client = OpenAI()
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Tu es un community manager TikTok specialise dans les videos de canulars telephoniques. "
-                        "A partir du dialogue suivant, genere une description TikTok COURTE : "
-                        "- Maximum 2 phrases qui resument la situation de facon drole et accrocheuse. "
-                        "- Ajoute 1 a 3 hashtags en rapport avec le theme de la video. "
-                        "- Termine TOUJOURS par #mrmartin #canular "
-                        "- Pas de guillemets autour de la reponse. "
-                        "- Pas d'emoji sauf si ca apporte vraiment quelque chose."
-                    ),
-                },
-                {"role": "user", "content": dialogue_text},
-            ],
-            max_tokens=150,
-            temperature=0.8,
+        system_instruction = (
+            "Tu es un community manager TikTok specialise dans les videos de canulars telephoniques. "
+            "A partir du dialogue suivant, genere une description TikTok COURTE : "
+            "- Maximum 2 phrases qui resument la situation de facon drole et accrocheuse. "
+            "- Ajoute 1 a 3 hashtags en rapport avec le theme de la video. "
+            "- Termine TOUJOURS par #mrmartin #canular "
+            "- Pas de guillemets autour de la reponse. "
+            "- Pas d'emoji sauf si ca apporte vraiment quelque chose. "
+            "- Reponds UNIQUEMENT avec la description, sans introduction."
         )
-        description = resp.choices[0].message.content.strip()
-        # S'assurer que les hashtags obligatoires sont presents
+
+        description = None
+
+        # ── Tentative 1 : Claude CLI ─────────────────────────────────────────
+        try:
+            prompt = f"{system_instruction}\n\nDialogue :\n{dialogue_text}"
+            description = _call_claude_cli(prompt, timeout=60)
+            log.info("Description TikTok generee via Claude CLI")
+        except Exception as e:
+            log.warning("Claude CLI indisponible pour description (%s) → fallback OpenAI", e)
+
+        # ── Tentative 2 : OpenAI fallback ─────────────────────────────────────
+        if not description:
+            client = OpenAI()
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_instruction},
+                    {"role": "user", "content": dialogue_text},
+                ],
+                max_tokens=150,
+                temperature=0.8,
+            )
+            description = (resp.choices[0].message.content or "").strip()
+            log.info("Description TikTok generee via OpenAI gpt-4o-mini")
+
         if "#mrmartin" not in description.lower():
             description += " #mrmartin"
         if "#canular" not in description.lower():
             description += " #canular"
-        log.info(f"Description TikTok generee: {description}")
+        log.info(f"Description TikTok finale: {description}")
         return description
     except Exception as e:
         log.error(f"Erreur generation description: {e}")
@@ -435,87 +478,130 @@ def save_upload_entry(publish_id: str, ok: bool, reason: str):
     log.info("📊 Entrée historique sauvée (template=%s, publish_id=%s)", prompt_template, publish_id or "N/A")
 
 
-def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable, caption: str = None) -> Tuple[bool, str]:
-    log_path = LOG_DIR / "upload_tiktok.log"
-    preflight_mp4_checks(final_mp4)
-
-    # TIKTOK_DIRECT_POST=1 dans .env pour activer le post direct (nécessite video.publish approuvé)
+def _upload_with_account(
+    final_mp4: str,
+    account_id: str,
+    python_exe: str,
+    log_path: Path,
+    caption: str | None,
+) -> Tuple[bool, str]:
+    """
+    Tente un upload pour un compte spécifique.
+    Retourne (success, reason).
+    """
+    token = get_access_token(account_id)
     use_direct = os.getenv("TIKTOK_DIRECT_POST", "0").strip() == "1"
+    label = get_account_label(account_id)
 
-    def _post(direct: bool = False):
-        # direct=False → mode INBOX/brouillon (video.upload)
-        # direct=True  → post direct sur le profil (video.publish — approuvé en production)
-        cmd = [python_exe, "post_tiktok_inbox.py", "--video", final_mp4, "--poll"]
+    def _post(direct: bool = False, tok: str = token):
+        cmd = [python_exe, "post_tiktok_inbox.py", "--video", final_mp4, "--poll",
+               "--token", tok]
         if direct and caption:
             cmd.extend(["--direct", "--caption", caption])
         return run_cmd_capture(cmd, log_path)
 
-    # --- Tentative 1 : DIRECT si approuvé, sinon INBOX
+    log.info(f"📤 Upload TikTok → {label} (compte {account_id})")
+
     rc, out, err = _post(direct=use_direct and bool(caption))
     if rc == 0:
         mode = "DIRECT" if (use_direct and caption) else "INBOX"
-        log.info(f"📤 Upload TikTok OK ({mode})")
+        log.info(f"✅ Upload TikTok OK ({mode}) — {label}")
+        mark_account_used(account_id)
         save_upload_entry(_parse_publish_id(out), ok=True, reason="ok")
         return True, "ok"
 
-    blob = (out + "\n" + err)
+    blob = out + "\n" + err
 
-    # --- scope_not_authorized → fallback INBOX (scope video.publish non approuvé)
+    # scope_not_authorized → fallback INBOX
     if _detect_scope_not_authorized(blob):
-        log.warning("⚠️ scope video.publish non autorisé → fallback en mode INBOX (brouillon)")
-        rc_fb, out_fb, err_fb = _post(direct=False)
+        log.warning(f"⚠️ scope video.publish non autorisé ({label}) → fallback INBOX")
+        rc_fb, out_fb, _ = _post(direct=False)
         if rc_fb == 0:
-            log.info("📤 Upload TikTok OK en mode INBOX (fallback)")
+            log.info(f"✅ Upload TikTok OK en mode INBOX (fallback) — {label}")
+            mark_account_used(account_id)
             save_upload_entry(_parse_publish_id(out_fb), ok=True, reason="ok_inbox_fallback")
             return True, "ok_inbox_fallback"
-        log.error("❌ Upload TikTok échoué même en mode INBOX. Voir logs/upload_tiktok.log")
+        log.error(f"❌ Upload TikTok échoué même en INBOX ({label})")
         return False, "other_failed"
 
     if _contains_spam_risk(blob):
-        log.error(f"🚫 Upload TikTok refusé (spam risk): {TIKTOK_SPAM_RISK_KEY}")
+        log.error(f"🚫 Upload TikTok refusé spam risk ({label}): {TIKTOK_SPAM_RISK_KEY}")
         return False, "spam_risk"
 
-    # --- Tentative 2 : refresh + retry
+    # Token invalide → refresh + retry
     if _detect_token_issue(blob):
-        log.warning("🔐 Token TikTok possiblement invalide → rafraîchissement…")
-        if not _refresh_token_ok(python_exe, log_path):
+        log.warning(f"🔐 Token invalide ({label}) → rafraîchissement…")
+        refresh_cmd = [python_exe, "auth_tiktok_refresh.py", "--account", account_id]
+        rc_r, _, _ = run_cmd_capture(refresh_cmd, log_path)
+        if rc_r != 0:
+            log.error(f"⛔ Refresh échoué pour {label}")
             return False, "token_failed"
-        rc2, out2, err2 = _post(direct=use_direct and bool(caption))
+        # Recharger le token frais depuis .env
+        from dotenv import load_dotenv as _ld
+        _ld(override=True)
+        fresh_token = get_access_token(account_id)
+        rc2, out2, err2 = _post(direct=use_direct and bool(caption), tok=fresh_token)
         if rc2 == 0:
-            log.info("📤 Upload TikTok OK après refresh token")
+            log.info(f"✅ Upload TikTok OK après refresh — {label}")
+            mark_account_used(account_id)
             save_upload_entry(_parse_publish_id(out2), ok=True, reason="ok")
             return True, "ok"
-        blob2 = (out2 + "\n" + err2)
-        if _detect_scope_not_authorized(blob2):
-            log.warning("⚠️ scope video.publish non autorisé après refresh → fallback INBOX")
-            rc_fb2, _, _ = _post(direct=False)
-            if rc_fb2 == 0:
-                log.info("📤 Upload TikTok OK en mode INBOX (fallback après refresh)")
-                return True, "ok_inbox_fallback"
+        blob2 = out2 + "\n" + err2
         if _contains_spam_risk(blob2):
-            log.error(f"🚫 Upload TikTok refusé après retry (spam risk): {TIKTOK_SPAM_RISK_KEY}")
             return False, "spam_risk"
-        if _detect_token_issue(blob2):
-            log.error("⛔ Token TikTok toujours invalide après refresh — ré-authentification manuelle requise "
-                      "(lance auth_tiktok_token_manager.py)")
-            return False, "token_failed"
-        log.error("❌ Upload TikTok encore en échec après refresh. Voir logs/upload_tiktok.log")
+        log.error(f"⛔ Token toujours invalide après refresh ({label})")
         return False, "token_failed"
 
-    # --- Tentative 3 : erreur non-token — on tente un refresh au cas où + retry
-    log.warning("❌ Upload TikTok échoué (erreur inconnue). Tentative refresh + retry…")
-    _refresh_token_ok(python_exe, log_path)
+    # Erreur inconnue → retry sans direct
+    log.warning(f"❌ Upload TikTok erreur inconnue ({label}). Retry…")
     rc3, out3, err3 = _post(direct=False)
     if rc3 == 0:
-        log.info("📤 Upload TikTok OK après retry (erreur transitoire)")
+        log.info(f"✅ Upload TikTok OK après retry ({label})")
+        mark_account_used(account_id)
         save_upload_entry(_parse_publish_id(out3), ok=True, reason="ok")
         return True, "ok"
-    blob3 = (out3 + "\n" + err3)
-    if _contains_spam_risk(blob3):
-        log.error(f"🚫 Upload TikTok refusé (spam risk): {TIKTOK_SPAM_RISK_KEY}")
+    if _contains_spam_risk(out3 + "\n" + err3):
         return False, "spam_risk"
-    log.error("❌ Upload TikTok échoué après 2 tentatives. Voir logs/upload_tiktok.log")
     return False, "other_failed"
+
+
+def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable, caption: str = None) -> Tuple[bool, str]:
+    """
+    Upload la vidéo en gérant la rotation multi-comptes.
+    Essaie le compte prioritaire d'abord, puis l'autre si le premier échoue
+    pour une raison autre que spam_risk.
+    """
+    log_path = LOG_DIR / "upload_tiktok.log"
+    preflight_mp4_checks(final_mp4)
+
+    rotation = get_rotation_status()
+    log.info(f"🔄 Rotation TikTok : {rotation}")
+
+    primary = get_next_account()
+    from tiktok_account_manager import get_available_accounts
+    all_accounts = get_available_accounts()
+    others = [a for a in all_accounts if a != primary]
+
+    # Tentative sur le compte principal
+    ok, reason = _upload_with_account(final_mp4, primary, python_exe, log_path, caption)
+    if ok:
+        return True, reason
+
+    # Si spam_risk ou token_failed définitif → ne pas essayer l'autre compte
+    if reason == "spam_risk":
+        return False, reason
+
+    # Tentative sur les autres comptes disponibles
+    for other_id in others:
+        log.warning(f"⚠️ Compte {primary} échoué ({reason}) → tentative sur {get_account_label(other_id)}")
+        ok2, reason2 = _upload_with_account(final_mp4, other_id, python_exe, log_path, caption)
+        if ok2:
+            return True, reason2
+        if reason2 == "spam_risk":
+            return False, reason2
+
+    log.error("❌ Tous les comptes TikTok ont échoué.")
+    return False, reason
 
 
 # =========================================================
@@ -851,6 +937,199 @@ duplicated objects, impossible reflections
 
 class ModerationRejectedError(RuntimeError):
     """Levée quand OpenAI refuse le prompt pour violation de contenu."""
+
+
+# ── Gemini Playwright ─────────────────────────────────────────────────────────
+
+BASE_PROFILE_PATH = os.getenv(
+    "BASE_PROFILE_PATH",
+    r"C:\Users\n.amelaise\Desktop\martinV2\animate_video_with_adobe\playwright-profile"
+)
+CHROME_PATH_GEMINI = os.getenv(
+    "CHROME_PATH",
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+)
+
+
+async def _gemini_generate_image(prompt: str, output_path: str) -> bool:
+    """
+    Envoie `prompt` à Gemini.google.com via Playwright et sauvegarde l'image générée.
+    Retourne True si succès, False sinon.
+    """
+    from playwright.async_api import async_playwright
+
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch_persistent_context(
+            user_data_dir=BASE_PROFILE_PATH,
+            executable_path=CHROME_PATH_GEMINI,
+            headless=False,
+            slow_mo=200,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--start-maximized",
+            ],
+            ignore_default_args=["--enable-automation"],
+        )
+
+        page = await browser.new_page()
+        await page.add_init_script(
+            "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+        )
+
+        try:
+            await page.goto("https://gemini.google.com", wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(3000)
+
+            # Fermer popup éventuel
+            for sel in ["button:has-text('Continuer')", "button:has-text('Continue')",
+                        "button:has-text('Accepter')", "button:has-text('Accept')",
+                        "button:has-text('Got it')", "button:has-text('Compris')"]:
+                try:
+                    el = page.locator(sel).first
+                    if await el.count() > 0:
+                        await el.click(timeout=3000)
+                        await page.wait_for_timeout(800)
+                except Exception:
+                    pass
+
+            # Trouver la zone de saisie
+            input_sel = None
+            for sel in ["[contenteditable='true']", "textarea", "rich-textarea", ".ql-editor"]:
+                try:
+                    el = page.locator(sel).first
+                    if await el.count() > 0 and await el.is_visible():
+                        input_sel = sel
+                        break
+                except Exception:
+                    pass
+
+            if not input_sel:
+                log.warning("[Gemini] Zone de saisie non trouvée")
+                return False
+
+            el = page.locator(input_sel).first
+            await el.click(timeout=5000)
+            await page.wait_for_timeout(500)
+            await page.keyboard.press("Control+a")
+            await page.keyboard.press("Delete")
+            await page.keyboard.type(prompt, delay=15)
+            await page.wait_for_timeout(500)
+            await page.keyboard.press("Enter")
+            log.info("[Gemini] Prompt envoyé, attente de l'image...")
+
+            # Attendre l'image (max 90s)
+            img_url = None
+            for i in range(18):
+                await page.wait_for_timeout(5000)
+                imgs = await page.evaluate("""
+                    () => [...document.querySelectorAll('img')]
+                        .filter(img => {
+                            const src = img.src || '';
+                            const w = img.naturalWidth;
+                            const h = img.naturalHeight;
+                            return w > 300 && h > 300
+                                && !src.includes('avatar')
+                                && !src.includes('favicon')
+                                && !src.includes('logo')
+                                && !src.includes('icon')
+                                && (src.includes('blob:') || src.includes('googleusercontent')
+                                    || src.includes('data:image'));
+                        })
+                        .map(img => ({src: img.src, w: img.naturalWidth, h: img.naturalHeight}))
+                """)
+                if imgs:
+                    best = max(imgs, key=lambda x: x['w'] * x['h'])
+                    img_url = best['src']
+                    log.info(f"[Gemini] Image trouvée à t={i*5+5}s ({best['w']}x{best['h']})")
+                    break
+                if i % 3 == 0:
+                    log.info(f"[Gemini] t={i*5+5}s — attente image...")
+
+            if not img_url:
+                log.warning("[Gemini] Timeout: pas d'image générée")
+                return False
+
+            # Tenter bouton download natif
+            download_selectors = [
+                "button[aria-label*='download' i]",
+                "button[aria-label*='télécharger' i]",
+                "button[aria-label*='Télécharger' i]",
+                "[data-test-id='download-button']",
+                "message-actions button[aria-label*='load' i]",
+            ]
+            for sel in download_selectors:
+                try:
+                    el = page.locator(sel).first
+                    if await el.count() > 0 and await el.is_visible(timeout=2000):
+                        async with page.expect_download(timeout=15000) as dl_info:
+                            await el.click(timeout=3000)
+                        dl = await dl_info.value
+                        await dl.save_as(output_path)
+                        log.info(f"[Gemini] Image sauvegardée via bouton download: {output_path}")
+                        return True
+                except Exception:
+                    continue
+
+            # Fallback: fetch via JavaScript
+            try:
+                img_data = await page.evaluate(f"""
+                    async () => {{
+                        const response = await fetch('{img_url}');
+                        const buffer = await response.arrayBuffer();
+                        const bytes = new Uint8Array(buffer);
+                        let binary = '';
+                        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+                        return btoa(binary);
+                    }}
+                """)
+                import base64 as _b64
+                img_bytes = _b64.b64decode(img_data)
+                with open(output_path, "wb") as f:
+                    f.write(img_bytes)
+                log.info(f"[Gemini] Image sauvegardée via fetch JS: {output_path}")
+                return True
+            except Exception as e:
+                log.warning(f"[Gemini] Fetch JS échoué: {e}")
+
+            # Fallback: screenshot page
+            await page.screenshot(path=output_path, full_page=False)
+            log.info(f"[Gemini] Image sauvegardée via screenshot (fallback): {output_path}")
+            return True
+
+        except Exception as e:
+            log.warning(f"[Gemini] Exception: {e}")
+            return False
+        finally:
+            await page.close()
+            await browser.close()
+
+
+def generate_image_with_gemini(script_text: str) -> str:
+    """
+    Génère l'image de fond via Gemini.google.com (gratuit).
+    Retourne le chemin du fichier PNG généré.
+    Lève RuntimeError si échec.
+    """
+    output_image_path = os.path.join(IMAGES_DIR, "full_background.png")
+    prompt_text = build_background_prompt(script_text)
+
+    # Condensé du prompt pour Gemini (max ~500 chars, évite le prompt ultra-long)
+    gemini_prompt = (
+        "Generate a photorealistic background image (no people, no characters) for a TikTok video scene. "
+        "The image should be a clean, realistic environment ready for characters to be added later. "
+        "Format: wide landscape 3:2. No text, no watermark, no humans.\n\n"
+        + "\n".join(
+            line for line in prompt_text.split("\n")
+            if any(kw in line for kw in ["Location:", "Topic:", "Atmosphere:", "Key objects:", "Script à analyser"])
+        )[:500]
+    )
+
+    log.info("[Gemini] Génération image de fond...")
+    success = asyncio.run(_gemini_generate_image(gemini_prompt, output_image_path))
+    if not success or not os.path.exists(output_image_path):
+        raise RuntimeError("Gemini: génération image échouée")
+    log.info(f"[Gemini] Image générée: {output_image_path}")
+    return output_image_path
 
 
 def generate_image_with_openai(script_text: str) -> str:
@@ -1435,8 +1714,14 @@ def run_pipeline_once() -> Tuple[bool, str]:
     else:
         with time_step("7) Génération image de fond + split 9:16"):
             full_txt = get_transcription_file_with_verification(RAW_SEGMENTS_PATH)
-            wait_for_internet(label="OpenAI image generation")
-            generate_image_with_openai(full_txt)
+            wait_for_internet(label="image generation")
+            # Essaie Gemini (gratuit) en premier, fallback sur OpenAI
+            try:
+                generate_image_with_gemini(full_txt)
+                log.info("✅ Image générée via Gemini")
+            except Exception as e:
+                log.warning(f"⚠️ Gemini image échoué ({e}) → fallback OpenAI")
+                generate_image_with_openai(full_txt)
             split_background_to_tiktok_pairs()
         _mark_done(state, "background")
 

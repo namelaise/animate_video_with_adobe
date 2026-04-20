@@ -5,6 +5,7 @@
 # - Sauvegarde la réponse dans config/tiktok_tokens.json
 # - Met à jour .env avec TIKTOK_USER_ACCESS_TOKEN (+ rafraîchit TIKTOK_USER_REFRESH_TOKEN si fourni)
 
+import argparse
 import os
 import json
 import time
@@ -16,19 +17,30 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ------------------------------
-# Configuration
+# Configuration multi-compte
 # ------------------------------
-CLIENT_KEY: str = (os.getenv("TIKTOK_CLIENT_KEY") or "").strip()
+# Compte sélectionné via --account (défaut: 1)
+_ap = argparse.ArgumentParser(add_help=False)
+_ap.add_argument("--account", type=str, default="1", choices=["1", "2"],
+                 help="Numéro du compte TikTok à rafraîchir (1 ou 2)")
+_args, _ = _ap.parse_known_args()
+ACCOUNT_ID: str = _args.account
+
+# Variables d'env selon le compte
+if ACCOUNT_ID == "2":
+    ENV_ACCESS_TOKEN_KEY  = "TIKTOK_ACCOUNT2_ACCESS_TOKEN"
+    ENV_REFRESH_TOKEN_KEY = "TIKTOK_ACCOUNT2_REFRESH_TOKEN"
+    TOKENS_JSON: Path     = Path("config/tiktok_tokens_account2.json")
+else:
+    ENV_ACCESS_TOKEN_KEY  = "TIKTOK_USER_ACCESS_TOKEN"
+    ENV_REFRESH_TOKEN_KEY = "TIKTOK_USER_REFRESH_TOKEN"
+    TOKENS_JSON: Path     = Path("config/tiktok_tokens.json")
+
+CLIENT_KEY: str    = (os.getenv("TIKTOK_CLIENT_KEY") or "").strip()
 CLIENT_SECRET: str = (os.getenv("TIKTOK_CLIENT_SECRET") or "").strip()
 
 TOKEN_URL: str = "https://open.tiktokapis.com/v2/oauth/token/"
-
-TOKENS_JSON: Path = Path("config/tiktok_tokens.json")   # même fichier que l'init
 ENV_FILE: Path = Path(".env")
-
-# Clés .env à maintenir
-ENV_ACCESS_TOKEN_KEY = "TIKTOK_USER_ACCESS_TOKEN"
-ENV_REFRESH_TOKEN_KEY = "TIKTOK_USER_REFRESH_TOKEN"     # pratique si tu veux aussi le stocker en .env
 
 
 # ------------------------------
@@ -183,4 +195,6 @@ def refresh_access_token() -> None:
 # Main
 # ------------------------------
 if __name__ == "__main__":
+    log(f"Rafraîchissement du {ACCOUNT_ID} (compte {ACCOUNT_ID})")
+    log(f"Tokens file : {TOKENS_JSON}")
     refresh_access_token()
