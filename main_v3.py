@@ -322,20 +322,21 @@ def generate_tiktok_description(transcript_path: str) -> str:
         except Exception as e:
             log.warning("Claude CLI indisponible pour description (%s) → fallback OpenAI", e)
 
-        # ── Tentative 2 : OpenAI fallback ─────────────────────────────────────
+        # ── Tentative 2 : OpenAI fallback (DÉSACTIVÉ — coûte des crédits) ────────
         if not description:
-            client = OpenAI()
-            resp = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": dialogue_text},
-                ],
-                max_tokens=150,
-                temperature=0.8,
-            )
-            description = (resp.choices[0].message.content or "").strip()
-            log.info("Description TikTok generee via OpenAI gpt-4o-mini")
+            raise RuntimeError("Claude CLI indisponible pour la description TikTok et fallback OpenAI désactivé.")
+            # client = OpenAI()
+            # resp = client.chat.completions.create(
+            #     model="gpt-4o-mini",
+            #     messages=[
+            #         {"role": "system", "content": system_instruction},
+            #         {"role": "user", "content": dialogue_text},
+            #     ],
+            #     max_tokens=150,
+            #     temperature=0.8,
+            # )
+            # description = (resp.choices[0].message.content or "").strip()
+            # log.info("Description TikTok generee via OpenAI gpt-4o-mini")
 
         if "#mrmartin" not in description.lower():
             description += " #mrmartin"
@@ -843,39 +844,57 @@ duplicated objects, impossible reflections
     for w in banned:
         cleaned = cleaned.replace(w, "")
 
-    # ── Extraction de contexte via GPT-4o ─────────────────────────────────
-    # gpt-image-1 est un modèle image : il ne comprend pas bien 2000 mots de
-    # transcription française. On demande d'abord à GPT-4o d'extraire les
+    # ── Extraction de contexte via Claude CLI ─────────────────────────────
+    # Le modèle image (gpt-image-1 / Gemini) ne comprend pas bien 2000 mots de
+    # transcription française. On demande d'abord à Claude d'extraire les
     # éléments visuellement pertinents pour guider le modèle image.
-    scene_context = cleaned  # fallback si GPT échoue
+    scene_context = cleaned  # fallback si Claude CLI échoue
     try:
-        _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        _extraction = _client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{
-                "role": "system",
-                "content": (
-                    "Tu es un directeur artistique. On te donne la transcription d'un appel téléphonique "
-                    "de canular (Mr Martin). Tu dois en extraire uniquement les informations visuelles "
-                    "nécessaires pour générer un décor de fond (sans personnage). "
-                    "Réponds en anglais, en 4 lignes maximum, format :\n"
-                    "Location: [lieu précis, ex: french hospital reception desk, french tax office, car dealership showroom]\n"
-                    "Topic: [sujet de l'appel en 5 mots max, ex: fake insurance claim, unpaid invoice]\n"
-                    "Atmosphere: [ambiance en 3 mots, ex: tense and bureaucratic]\n"
-                    "Key objects: [3-5 objets typiques du lieu, ex: reception counter, waiting chairs, administrative posters]\n"
-                    "Ne mets rien d'autre."
-                )
-            }, {
-                "role": "user",
-                "content": f"Transcription (extrait) :\n{cleaned[:3000]}"
-            }],
-            max_tokens=120,
-            temperature=0.3,
+        _prompt_extraction = (
+            "Tu es un directeur artistique. On te donne la transcription d'un appel téléphonique "
+            "de canular (Mr Martin). Tu dois en extraire uniquement les informations visuelles "
+            "nécessaires pour générer un décor de fond (sans personnage). "
+            "Réponds en anglais, en 4 lignes maximum, format :\n"
+            "Location: [lieu précis, ex: french hospital reception desk, french tax office, car dealership showroom]\n"
+            "Topic: [sujet de l'appel en 5 mots max, ex: fake insurance claim, unpaid invoice]\n"
+            "Atmosphere: [ambiance en 3 mots, ex: tense and bureaucratic]\n"
+            "Key objects: [3-5 objets typiques du lieu, ex: reception counter, waiting chairs, administrative posters]\n"
+            "Ne mets rien d'autre.\n\n"
+            f"Transcription (extrait) :\n{cleaned[:3000]}"
         )
-        scene_context = _extraction.choices[0].message.content.strip()
-        log.info("Contexte scene extrait par GPT-4o:\n%s", scene_context)
+        scene_context = _call_claude_cli(_prompt_extraction, timeout=60)
+        log.info("Contexte scene extrait par Claude CLI:\n%s", scene_context)
     except Exception as e:
-        log.warning("Extraction contexte GPT-4o echouee, fallback sur transcription brute: %s", e)
+        log.warning("Extraction contexte Claude CLI echouee, fallback sur transcription brute: %s", e)
+    # ── [DÉSACTIVÉ] Extraction via GPT-4o (coûte des crédits) ────────────────
+    # try:
+    #     _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    #     _extraction = _client.chat.completions.create(
+    #         model="gpt-4o",
+    #         messages=[{
+    #             "role": "system",
+    #             "content": (
+    #                 "Tu es un directeur artistique. On te donne la transcription d'un appel téléphonique "
+    #                 "de canular (Mr Martin). Tu dois en extraire uniquement les informations visuelles "
+    #                 "nécessaires pour générer un décor de fond (sans personnage). "
+    #                 "Réponds en anglais, en 4 lignes maximum, format :\n"
+    #                 "Location: [lieu précis, ex: french hospital reception desk, french tax office, car dealership showroom]\n"
+    #                 "Topic: [sujet de l'appel en 5 mots max, ex: fake insurance claim, unpaid invoice]\n"
+    #                 "Atmosphere: [ambiance en 3 mots, ex: tense and bureaucratic]\n"
+    #                 "Key objects: [3-5 objets typiques du lieu, ex: reception counter, waiting chairs, administrative posters]\n"
+    #                 "Ne mets rien d'autre."
+    #             )
+    #         }, {
+    #             "role": "user",
+    #             "content": f"Transcription (extrait) :\n{cleaned[:3000]}"
+    #         }],
+    #         max_tokens=120,
+    #         temperature=0.3,
+    #     )
+    #     scene_context = _extraction.choices[0].message.content.strip()
+    #     log.info("Contexte scene extrait par GPT-4o:\n%s", scene_context)
+    # except Exception as e:
+    #     log.warning("Extraction contexte GPT-4o echouee, fallback sur transcription brute: %s", e)
 
     template_text = None
     chosen_name = "(default)"
@@ -921,6 +940,38 @@ class ModerationRejectedError(RuntimeError):
 
 # ── Gemini Playwright ─────────────────────────────────────────────────────────
 
+def _cleanup_chrome_profile_lock() -> None:
+    """
+    Supprime le lockfile Chrome si présent (zombie d'un run précédent crashé).
+    Tue d'abord tous les processus Chrome utilisant ce profil.
+    """
+    lockfile = os.path.join(BASE_PROFILE_PATH, "lockfile")
+    if not os.path.exists(lockfile):
+        return
+
+    log.warning("[Gemini] lockfile détecté dans le profil Chrome — nettoyage des processus zombie...")
+
+    ps_script = (
+        "Get-WmiObject Win32_Process "
+        "| Where-Object { $_.CommandLine -like '*playwright-profile*' } "
+        "| ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+    )
+    try:
+        subprocess.run(
+            ["powershell", "-NonInteractive", "-Command", ps_script],
+            capture_output=True, text=True, timeout=15
+        )
+        time.sleep(2)
+    except Exception as e:
+        log.warning(f"[Gemini] Impossible de tuer Chrome zombie: {e}")
+
+    try:
+        os.remove(lockfile)
+        log.info("[Gemini] lockfile supprimé avec succès")
+    except OSError as e:
+        log.warning(f"[Gemini] lockfile toujours verrouillé après tentative de nettoyage: {e}")
+
+
 BASE_PROFILE_PATH = os.getenv(
     "BASE_PROFILE_PATH",
     r"C:\Users\n.amelaise\Desktop\martinV2\animate_video_with_adobe\playwright-profile"
@@ -938,18 +989,23 @@ async def _gemini_generate_image(prompt: str, output_path: str) -> bool:
     """
     from playwright.async_api import async_playwright
 
+    _cleanup_chrome_profile_lock()
+
     async with async_playwright() as pw:
         browser = await pw.chromium.launch_persistent_context(
             user_data_dir=BASE_PROFILE_PATH,
             executable_path=CHROME_PATH_GEMINI,
-            headless=False,
-            slow_mo=200,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--start-maximized",
-            ],
+            headless=True,
+            slow_mo=100,
+            args=["--disable-blink-features=AutomationControlled"],
             ignore_default_args=["--enable-automation"],
         )
+
+        for existing_page in browser.pages:
+            try:
+                await existing_page.close()
+            except Exception:
+                pass
 
         page = await browser.new_page()
         await page.add_init_script(
@@ -987,12 +1043,9 @@ async def _gemini_generate_image(prompt: str, output_path: str) -> bool:
                 log.warning("[Gemini] Zone de saisie non trouvée")
                 return False
 
-            el = page.locator(input_sel).first
-            await el.click(timeout=5000)
-            await page.wait_for_timeout(500)
-            await page.keyboard.press("Control+a")
-            await page.keyboard.press("Delete")
-            await page.keyboard.type(prompt, delay=15)
+            if not await _fill_gemini_prompt(page, input_sel, prompt):
+                log.warning("[Gemini] Prompt incomplet dans la zone de saisie")
+                return False
             await page.wait_for_timeout(500)
             await page.keyboard.press("Enter")
             log.info("[Gemini] Prompt envoyé, attente de l'image...")
@@ -1029,52 +1082,12 @@ async def _gemini_generate_image(prompt: str, output_path: str) -> bool:
                 log.warning("[Gemini] Timeout: pas d'image générée")
                 return False
 
-            # Tenter bouton download natif
-            download_selectors = [
-                "button[aria-label*='download' i]",
-                "button[aria-label*='télécharger' i]",
-                "button[aria-label*='Télécharger' i]",
-                "[data-test-id='download-button']",
-                "message-actions button[aria-label*='load' i]",
-            ]
-            for sel in download_selectors:
-                try:
-                    el = page.locator(sel).first
-                    if await el.count() > 0 and await el.is_visible(timeout=2000):
-                        async with page.expect_download(timeout=15000) as dl_info:
-                            await el.click(timeout=3000)
-                        dl = await dl_info.value
-                        await dl.save_as(output_path)
-                        log.info(f"[Gemini] Image sauvegardée via bouton download: {output_path}")
-                        return True
-                except Exception:
-                    continue
-
-            # Fallback: fetch via JavaScript
-            try:
-                img_data = await page.evaluate(f"""
-                    async () => {{
-                        const response = await fetch('{img_url}');
-                        const buffer = await response.arrayBuffer();
-                        const bytes = new Uint8Array(buffer);
-                        let binary = '';
-                        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-                        return btoa(binary);
-                    }}
-                """)
-                import base64 as _b64
-                img_bytes = _b64.b64decode(img_data)
-                with open(output_path, "wb") as f:
-                    f.write(img_bytes)
-                log.info(f"[Gemini] Image sauvegardée via fetch JS: {output_path}")
+            if await _download_gemini_image(page, output_path):
+                log.info(f"[Gemini] Image sauvegardée via bouton download: {output_path}")
                 return True
-            except Exception as e:
-                log.warning(f"[Gemini] Fetch JS échoué: {e}")
 
-            # Fallback: screenshot page
-            await page.screenshot(path=output_path, full_page=False)
-            log.info(f"[Gemini] Image sauvegardée via screenshot (fallback): {output_path}")
-            return True
+            log.warning("[Gemini] Bouton de téléchargement introuvable ou fichier invalide")
+            return False
 
         except Exception as e:
             log.warning(f"[Gemini] Exception: {e}")
@@ -1095,6 +1108,143 @@ _BG_VARIATIONS = [
 N_DYNAMIC_BACKGROUNDS = int(os.getenv("N_DYNAMIC_BACKGROUNDS", "3"))
 
 
+async def _fill_gemini_prompt(page, input_sel: str, prompt: str) -> bool:
+    """Remplit Gemini avec le prompt complet, puis vérifie que le texte est bien présent."""
+    def _looks_complete(value: str) -> bool:
+        expected = " ".join(prompt.split())
+        actual = " ".join((value or "").split())
+        if actual == expected:
+            return True
+        if len(actual) < int(len(expected) * 0.95):
+            return False
+        return expected[:120] in actual and expected[-120:] in actual
+
+    el = page.locator(input_sel).first
+    await el.click(timeout=5000)
+    await page.wait_for_timeout(500)
+    await page.keyboard.press("Control+a")
+    await page.keyboard.press("Delete")
+
+    try:
+        await el.evaluate(
+            """(node, text) => {
+                const target = node.matches('textarea,input') ? node : node.closest('textarea,input') || node;
+                if (target.matches && target.matches('textarea,input')) {
+                    target.value = text;
+                } else {
+                    target.textContent = text;
+                }
+                target.dispatchEvent(new InputEvent('input', {
+                    bubbles: true,
+                    cancelable: true,
+                    inputType: 'insertText',
+                    data: text
+                }));
+                target.dispatchEvent(new Event('change', { bubbles: true }));
+            }""",
+            prompt,
+        )
+    except Exception:
+        await page.keyboard.insert_text(prompt)
+
+    await page.wait_for_timeout(800)
+    typed = await el.evaluate(
+        """node => {
+            const target = node.matches('textarea,input') ? node : node.closest('textarea,input') || node;
+            return target.value || target.innerText || target.textContent || '';
+        }"""
+    )
+    if _looks_complete(typed):
+        return True
+
+    await el.click(timeout=5000)
+    await page.keyboard.press("Control+a")
+    await page.keyboard.press("Delete")
+    await page.keyboard.insert_text(prompt)
+    await page.wait_for_timeout(800)
+    typed = await el.evaluate(
+        """node => {
+            const target = node.matches('textarea,input') ? node : node.closest('textarea,input') || node;
+            return target.value || target.innerText || target.textContent || '';
+        }"""
+    )
+    return _looks_complete(typed)
+
+
+def _is_valid_generated_image(path: str, min_width: int = 512, min_height: int = 512) -> bool:
+    try:
+        if not os.path.exists(path) or os.path.getsize(path) < 20_000:
+            return False
+        with Image.open(path) as img:
+            img.verify()
+        with Image.open(path) as img:
+            w, h = img.size
+        return w >= min_width and h >= min_height
+    except Exception:
+        return False
+
+
+async def _download_gemini_image(page, output_path: str) -> bool:
+    download_selectors = [
+        "button[aria-label*='download' i]",
+        "button[aria-label*='télécharger' i]",
+        "button[aria-label*='Télécharger' i]",
+        "[data-test-id='download-button']",
+        "message-actions button[aria-label*='load' i]",
+    ]
+    for _ in range(18):
+        for sel in download_selectors:
+            try:
+                el = page.locator(sel).last
+                if await el.count() > 0 and await el.is_visible(timeout=1000):
+                    async with page.expect_download(timeout=20000) as dl_info:
+                        await el.click(timeout=5000)
+                    dl = await dl_info.value
+                    await dl.save_as(output_path)
+                    if _is_valid_generated_image(output_path):
+                        return True
+            except Exception:
+                continue
+        await page.wait_for_timeout(2500)
+
+    # Fallback: récupérer l'image via fetch JS sur les <img> détectées
+    try:
+        img_urls = await page.evaluate("""
+            () => [...document.querySelectorAll('img')]
+                .filter(img => {
+                    const src = img.src || '';
+                    return img.naturalWidth > 300 && img.naturalHeight > 300
+                        && !src.includes('avatar') && !src.includes('favicon')
+                        && !src.includes('logo') && !src.includes('icon');
+                })
+                .map(img => img.src)
+        """)
+        for url in (img_urls or []):
+            try:
+                img_data = await page.evaluate(f"""
+                    async () => {{
+                        const r = await fetch('{url}');
+                        const buf = await r.arrayBuffer();
+                        const bytes = new Uint8Array(buf);
+                        let b = '';
+                        for (let i = 0; i < bytes.length; i++) b += String.fromCharCode(bytes[i]);
+                        return btoa(b);
+                    }}
+                """)
+                import base64 as _b64
+                with open(output_path, "wb") as f:
+                    f.write(_b64.b64decode(img_data))
+                if _is_valid_generated_image(output_path):
+                    log.info(f"[Gemini] Image sauvegardée via fetch JS (fallback): {output_path}")
+                    return True
+            except Exception:
+                continue
+    except Exception as e:
+        log.warning(f"[Gemini] Fetch JS fallback échoué: {e}")
+
+    return False
+
+
 async def _gemini_generate_multiple(prompts: list[str], output_paths: list[str]) -> list[bool]:
     """
     Ouvre UN seul navigateur et génère plusieurs images Gemini en séquence.
@@ -1103,15 +1253,24 @@ async def _gemini_generate_multiple(prompts: list[str], output_paths: list[str])
     from playwright.async_api import async_playwright
     results = []
 
+    _cleanup_chrome_profile_lock()
+
     async with async_playwright() as pw:
         browser = await pw.chromium.launch_persistent_context(
             user_data_dir=BASE_PROFILE_PATH,
             executable_path=CHROME_PATH_GEMINI,
-            headless=False,
-            slow_mo=200,
-            args=["--disable-blink-features=AutomationControlled", "--start-maximized"],
+            headless=True,
+            slow_mo=100,
+            args=["--disable-blink-features=AutomationControlled"],
             ignore_default_args=["--enable-automation"],
         )
+
+        # Fermer les onglets déjà ouverts par le contexte persistant
+        for existing_page in browser.pages:
+            try:
+                await existing_page.close()
+            except Exception:
+                pass
 
         for i, (prompt, output_path) in enumerate(zip(prompts, output_paths)):
             log.info(f"[Gemini] Image {i+1}/{len(prompts)}...")
@@ -1165,12 +1324,9 @@ async def _gemini_page_generate(page, prompt: str, output_path: str) -> bool:
         if not input_sel:
             return False
 
-        el = page.locator(input_sel).first
-        await el.click(timeout=5000)
-        await page.wait_for_timeout(500)
-        await page.keyboard.press("Control+a")
-        await page.keyboard.press("Delete")
-        await page.keyboard.type(prompt, delay=15)
+        if not await _fill_gemini_prompt(page, input_sel, prompt):
+            log.warning("[Gemini] Prompt incomplet dans la zone de saisie")
+            return False
         await page.wait_for_timeout(500)
         await page.keyboard.press("Enter")
 
@@ -1195,48 +1351,14 @@ async def _gemini_page_generate(page, prompt: str, output_path: str) -> bool:
                 break
 
         if not img_url:
+            log.warning("[Gemini] Timeout: aucune image détectée dans la page")
             return False
 
-        # Tenter bouton download
-        download_selectors = [
-            "button[aria-label*='download' i]",
-            "button[aria-label*='télécharger' i]",
-            "[data-test-id='download-button']",
-            "message-actions button[aria-label*='load' i]",
-        ]
-        for sel in download_selectors:
-            try:
-                el = page.locator(sel).first
-                if await el.count() > 0 and await el.is_visible(timeout=2000):
-                    async with page.expect_download(timeout=15000) as dl_info:
-                        await el.click(timeout=3000)
-                    dl = await dl_info.value
-                    await dl.save_as(output_path)
-                    return True
-            except Exception:
-                continue
-
-        # Fallback fetch JS
-        try:
-            img_data = await page.evaluate(f"""
-                async () => {{
-                    const r = await fetch('{img_url}');
-                    const buf = await r.arrayBuffer();
-                    const bytes = new Uint8Array(buf);
-                    let b = '';
-                    for (let i = 0; i < bytes.length; i++) b += String.fromCharCode(bytes[i]);
-                    return btoa(b);
-                }}
-            """)
-            import base64 as _b64
-            with open(output_path, "wb") as f:
-                f.write(_b64.b64decode(img_data))
+        if await _download_gemini_image(page, output_path):
             return True
-        except Exception:
-            pass
 
-        await page.screenshot(path=output_path, full_page=False)
-        return True
+        log.warning("[Gemini] Bouton de téléchargement introuvable ou fichier invalide")
+        return False
 
     except Exception as e:
         log.warning(f"[Gemini] Page exception: {e}")
@@ -1253,39 +1375,71 @@ def generate_dynamic_backgrounds_with_gemini(script_text: str, n: int = N_DYNAMI
     """
     prompt_text = build_background_prompt(script_text)
 
-    # Extraire le contexte visuel condensé (lignes Location/Topic/etc.)
-    context_lines = "\n".join(
-        line for line in prompt_text.split("\n")
-        if any(kw in line for kw in ["Location:", "Topic:", "Atmosphere:", "Key objects:"])
-    )[:400]
-
     base_prompt = (
-        "Generate a photorealistic background image (absolutely no people, no characters, no humans) "
-        "for a TikTok vertical video. Clean realistic environment for adding animated characters later. "
-        "Wide landscape format, no text, no watermark.\n\n"
-        + context_lines
+        f"{prompt_text}\n\n"
+        "GEMINI QUALITY REQUIREMENTS:\n"
+        "- Generate one high-detail, photorealistic, wide landscape background image (16:9 or wider).\n"
+        "- The scene must be strictly based on the video/script context above. Do not change the location, topic, mood, or setting.\n"
+        "- This is one complete, coherent environment for a TikTok conversation scene.\n"
+        "- The composition must be balanced left-to-right: both the left and right portions of the image must work as clean standalone vertical backgrounds — "
+        "no key object centered in the middle, usable open space on each side, natural depth, believable perspective.\n"
+        "- Add rich realistic detail: natural materials, subtle textures, small contextual objects, realistic wear, coherent lighting, "
+        "soft shadows, accurate reflections, high sharpness, realistic colors, photographic dynamic range.\n"
+        "- Keep the same scene identity for every image in this batch. Variants may only change camera angle, framing, lighting tone, "
+        "or minor object placement. They must not become a different place.\n"
+        "- Absolutely no people, no characters, no silhouettes, no faces, no hands, no bodies, no human reflections.\n"
+        "- No visible text, no watermark, no logo, no UI, no subtitles, no unreadable signs.\n"
+        "- Avoid artificial CGI, cartoon, illustration, painterly look, surreal elements, warped geometry, blurry details."
     )
 
     # Construire N prompts avec variations
     prompts = [base_prompt]
     for i in range(1, n):
         variation = _BG_VARIATIONS[(i - 1) % len(_BG_VARIATIONS)]
-        prompts.append(f"{base_prompt}\n\nVariation: {variation}")
+        prompts.append(
+            f"{base_prompt}\n\n"
+            f"VARIATION {i}: {variation}\n"
+            "Important: keep exactly the same script-based location and context as the base image. "
+            "Only make this light variation; do not invent a new scene."
+        )
 
     output_paths = [
         os.path.join(IMAGES_DIR, f"full_background_{i}.png") for i in range(n)
     ]
+    for stale_path in output_paths + [os.path.join(IMAGES_DIR, "full_background.png")]:
+        try:
+            if os.path.exists(stale_path):
+                os.remove(stale_path)
+        except Exception:
+            pass
 
     log.info(f"[Gemini] Génération de {n} fonds dynamiques...")
     results = asyncio.run(_gemini_generate_multiple(prompts, output_paths))
 
-    generated = [p for p, ok in zip(output_paths, results) if ok and os.path.exists(p)]
+    generated = [
+        p for p, ok in zip(output_paths, results)
+        if ok and _is_valid_generated_image(p)
+    ]
     if not generated:
         raise RuntimeError("Gemini: aucune image de fond générée")
+    if len(generated) < len(output_paths):
+        missing = [
+            os.path.basename(p)
+            for p, ok in zip(output_paths, results)
+            if not ok or not _is_valid_generated_image(p)
+        ]
+        log.warning(f"[Gemini] {len(generated)}/{len(output_paths)} images générées — manquantes: {missing}")
 
-    # Copier l'image 0 comme full_background.png (compat existante)
+    # Copier la première image disponible comme full_background.png (compat existante)
     import shutil as _shutil
     _shutil.copy2(generated[0], os.path.join(IMAGES_DIR, "full_background.png"))
+    # Re-numéroter les images générées en séquence continue (0, 1, 2, ...)
+    # pour que split_all_dynamic_backgrounds() les trouve correctement
+    for new_idx, src_path in enumerate(generated):
+        expected = os.path.join(IMAGES_DIR, f"full_background_{new_idx}.png")
+        if src_path != expected:
+            _shutil.move(src_path, expected)
+            generated[new_idx] = expected
     log.info(f"[Gemini] {len(generated)}/{n} fonds générés: {[os.path.basename(p) for p in generated]}")
     return generated
 
@@ -1960,8 +2114,9 @@ def run_pipeline_once() -> Tuple[bool, str]:
                 generate_dynamic_backgrounds_with_gemini(full_txt, n=N_DYNAMIC_BACKGROUNDS)
                 log.info(f"✅ {N_DYNAMIC_BACKGROUNDS} fonds dynamiques générés via Gemini")
             except Exception as e:
-                log.warning(f"⚠️ Gemini fonds dynamiques échoué ({e}) → fallback OpenAI (1 seul fond)")
-                generate_image_with_openai(full_txt)
+                log.error(f"❌ Gemini fonds dynamiques échoué ({e}) — fallback OpenAI désactivé. Pipeline arrêté.")
+                raise RuntimeError(f"Génération de fond échouée (Gemini) et fallback OpenAI désactivé : {e}") from e
+                # generate_image_with_openai(full_txt)  # DÉSACTIVÉ — coûte des crédits
             split_all_dynamic_backgrounds()
         _mark_done(state, "background")
 

@@ -16,7 +16,9 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
-load_dotenv()
+BASE_DIR = Path(__file__).resolve().parent
+
+load_dotenv(BASE_DIR / ".env")
 
 # ── CLI args ──────────────────────────────────────────────────────────────────
 _ap = argparse.ArgumentParser(add_help=False)
@@ -38,7 +40,7 @@ ACCOUNT_ID: str = _args.account or get_active_account_id() or "acc_1"
 CLIENT_KEY:    str = (os.getenv("TIKTOK_CLIENT_KEY") or "").strip()
 CLIENT_SECRET: str = (os.getenv("TIKTOK_CLIENT_SECRET") or "").strip()
 TOKEN_URL:     str = "https://open.tiktokapis.com/v2/oauth/token/"
-ENV_FILE:      Path = Path(".env")
+ENV_FILE:      Path = BASE_DIR / ".env"
 
 
 # ─────────────────────────────────────────────

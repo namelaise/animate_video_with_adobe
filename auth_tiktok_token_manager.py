@@ -1,12 +1,22 @@
 # auth_tiktok_firefox.py
 # Ouvre Firefox, attend l'auth TikTok (Desktop), récupère le token et l'enregistre.
-import os, time, threading, hashlib, secrets, json, requests, webbrowser
+import argparse, os, time, threading, hashlib, secrets, json, requests, webbrowser, subprocess, tempfile
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlencode, urlparse, parse_qs, quote
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+BASE_DIR = Path(__file__).resolve().parent
+
+load_dotenv(BASE_DIR / ".env")
+
+ap = argparse.ArgumentParser(description="Connexion OAuth TikTok multi-compte")
+ap.add_argument(
+    "--shared-browser",
+    action="store_true",
+    help="Utilise la session navigateur habituelle au lieu d'un profil Firefox isolé.",
+)
+args = ap.parse_args()
 
 # --- Config minimale ---
 CLIENT_KEY    = (os.getenv("TIKTOK_CLIENT_KEY") or "").strip()
@@ -19,8 +29,8 @@ FIREFOX_PATH  = (os.getenv("FIREFOX_PATH") or "").strip()  # ex: C:\Program File
 
 AUTHORIZE_URL = "https://www.tiktok.com/v2/auth/authorize/"
 TOKEN_URL     = "https://open.tiktokapis.com/v2/oauth/token/"
-TOKENS_JSON   = Path("config/tiktok_tokens.json")
-ENV_FILE      = Path(".env")
+TOKENS_JSON   = BASE_DIR / "config" / "tiktok_tokens.json"
+ENV_FILE      = BASE_DIR / ".env"
 
 def log(s: str): print("[INFO]", s)
 def err(s: str): print("[ERR]", s)
@@ -31,17 +41,40 @@ def assert_env():
     if not (REDIRECT_URI.startswith("http://") or REDIRECT_URI.startswith("https://")):
         raise SystemExit("[ERR] TIKTOK_REDIRECT_URI invalide. Exemple valide: http://127.0.0.1:53682/callback")
 
-def register_firefox():
+class _OpenedBrowser:
+    def __init__(self, proc=None):
+        self.proc = proc
+
+
+def open_auth_url(auth_url: str):
+    fresh_browser = not args.shared_browser and (os.getenv("TIKTOK_AUTH_FRESH_BROWSER", "1").strip() != "0")
+
+    if fresh_browser and FIREFOX_PATH and Path(FIREFOX_PATH).exists():
+        profile_dir = tempfile.mkdtemp(prefix="mr_martin_tiktok_auth_")
+        log("Ouverture Firefox avec un profil isolé pour choisir le bon compte TikTok.")
+        log("Connecte le compte voulu dans cette fenêtre, puis autorise l'application.")
+        return _OpenedBrowser(subprocess.Popen([
+            FIREFOX_PATH,
+            "-no-remote",
+            "-profile",
+            profile_dir,
+            auth_url,
+        ]))
+
     # Essaie d'ouvrir explicitement Firefox si FIREFOX_PATH est fourni
     if FIREFOX_PATH and Path(FIREFOX_PATH).exists():
         try:
             webbrowser.register("firefox", None, webbrowser.BackgroundBrowser(FIREFOX_PATH))
-            return webbrowser.get("firefox")
+            br = webbrowser.get("firefox")
+            br.open(auth_url, new=1, autoraise=True)
+            return _OpenedBrowser()
         except Exception:
             pass
     # Sinon, tente le navigateur par défaut
     try:
-        return webbrowser.get()  # windows-default / default
+        br = webbrowser.get()  # windows-default / default
+        br.open(auth_url, new=1, autoraise=True)
+        return _OpenedBrowser()
     except Exception:
         return None
 
@@ -84,11 +117,10 @@ def wait_code_in_browser(auth_url: str, expected_state: str, timeout_sec=240) ->
 
     log(f"Serveur callback: http://127.0.0.1:{port}{parsed.path or '/callback'}")
     log("Ouverture du navigateur...")
-    br = register_firefox()
-    if br is None:
+    opened = open_auth_url(auth_url)
+    if opened is None:
         err("Impossible d'initialiser un navigateur. Installe Firefox ou configure FIREFOX_PATH dans .env")
         raise SystemExit(1)
-    br.open(auth_url, new=1, autoraise=True)
     log("Si rien ne s'ouvre, copie-colle l'URL ci-dessous dans Firefox:")
     print(auth_url)
 
@@ -197,7 +229,7 @@ def main():
 
     # ── Enregistrement dans le gestionnaire de comptes multi-compte ───────────
     try:
-        from tiktok_account_manager import add_or_update_account, set_active_account
+        from tiktok_account_manager import add_or_update_account, refresh_profile, set_active_account
         open_id = (tok.get("open_id") or "").strip()
         acc_id = add_or_update_account(
             access_token=access_token,
@@ -205,6 +237,10 @@ def main():
             open_id=open_id,
         )
         set_active_account(acc_id)
+        if refresh_profile(acc_id):
+            log("✅ Profil TikTok récupéré (nom + avatar)")
+        else:
+            log("[WARN] Profil TikTok non récupéré. Vérifie que le scope user.info.basic est bien autorisé.")
         log(f"✅ Compte enregistré dans le gestionnaire : {acc_id} (actif)")
     except Exception as e:
         log(f"[WARN] Enregistrement compte manager échoué (non bloquant): {e}")

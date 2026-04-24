@@ -33,6 +33,7 @@ MATCHING_REQUEST_FILE  = BASE_DIR / "matching_request.json"
 MATCHING_RESPONSE_FILE = BASE_DIR / "matching_response.json"
 GUI_CONFIG_FILE        = BASE_DIR / "gui_config.json"
 ACCOUNTS_FILE          = BASE_DIR / "config" / "tiktok_accounts.json"
+PIPELINE_STATE_FILE    = BASE_DIR / "pipeline_state.json"
 VENV_PYTHON = BASE_DIR / "venv" / "Scripts" / "python.exe"
 PYTHON = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
 DEFAULT_DAILY_LIMIT = 5
@@ -897,6 +898,36 @@ def main(page: ft.Page):
         )
         _open_dialog(dlg)
 
+    def reset_pipeline_state(e=None):
+        def confirm(ev):
+            _close_dialog(dlg)
+            try:
+                PIPELINE_STATE_FILE.unlink(missing_ok=True)
+                pipeline_current["ref"] = -1
+                on_new_generation()
+                reset_pipeline()
+                toast("Pipeline réinitialisé", "success")
+                refresh_all()
+            except Exception as ex:
+                toast(f"Erreur reset pipeline : {ex}", "error")
+
+        def cancel(ev):
+            _close_dialog(dlg)
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Réinitialiser le pipeline ?"),
+            content=ft.Text(
+                "Cela supprime pipeline_state.json. Au prochain lancement, les étapes ne seront plus considérées comme déjà faites."
+            ),
+            actions=[
+                ft.TextButton("Annuler", on_click=cancel),
+                ft.FilledButton("Réinitialiser", on_click=confirm,
+                                style=ft.ButtonStyle(bgcolor=WARN_C, color="white")),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        _open_dialog(dlg)
+
     def update_ytdlp(e=None):
         def do():
             page.run_thread(lambda: _start_action_log("Mise à jour yt-dlp"))
@@ -1165,6 +1196,25 @@ def main(page: ft.Page):
     # ── TikTok Accounts panel ─────────────────────────────
     accounts_col = ft.Column([], spacing=6)
 
+    def _resolve_local_path(path_value: str) -> Path:
+        p = Path(path_value or "")
+        return p if p.is_absolute() else BASE_DIR / p
+
+    def _account_name(acc: dict) -> str:
+        name = (acc.get("display_name") or "").strip()
+        username = (acc.get("username") or "").strip()
+        if name and not name.lower().startswith("(compte"):
+            return name
+        if username and not username.lower().startswith("(compte"):
+            return username if username.startswith("@") else f"@{username}"
+        return acc.get("id", "Compte TikTok")
+
+    def _account_username(acc: dict) -> str:
+        username = (acc.get("username") or "").strip()
+        if username and not username.lower().startswith("(compte"):
+            return username if username.startswith("@") else f"@{username}"
+        return "Profil à actualiser"
+
     def _load_accounts_data() -> tuple[list[dict], str | None]:
         """Lit config/tiktok_accounts.json directement (sans importer le module)."""
         try:
@@ -1191,40 +1241,42 @@ def main(page: ft.Page):
 
     def build_account_card(acc: dict, is_active: bool) -> ft.Container:
         acc_id       = acc.get("id", "?")
-        username     = acc.get("username") or acc.get("display_name") or acc_id
-        display_name = acc.get("display_name") or username
+        display_name = _account_name(acc)
+        username     = _account_username(acc)
         avatar_local = acc.get("avatar_local", "")
         uploads      = acc.get("upload_count", 0)
+        profile_error = (acc.get("profile_error") or "").strip()
+        avatar_path = _resolve_local_path(avatar_local)
 
         # Avatar
-        if avatar_local and Path(avatar_local).exists():
+        if avatar_local and avatar_path.exists():
             avatar_widget = ft.Container(
                 content=ft.Image(
-                    src=str(Path(BASE_DIR / avatar_local) if not Path(avatar_local).is_absolute() else Path(avatar_local)),
-                    width=36, height=36,
+                    src=str(avatar_path),
+                    width=44, height=44,
                     fit=ft.BoxFit.COVER,
-                    border_radius=18,
+                    border_radius=22,
                 ),
-                width=36, height=36,
-                border_radius=18,
+                width=44, height=44,
+                border_radius=22,
                 clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
-                border=ft.Border.all(2, "#8b5cf6") if is_active else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                border=ft.Border.all(2, "#d0bcff") if is_active else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
             )
         else:
             avatar_widget = ft.Container(
                 content=ft.Icon(ft.Icons.ACCOUNT_CIRCLE, size=22,
-                                color="#8b5cf6" if is_active else OUTLINE),
-                width=36, height=36,
-                border_radius=18,
+                                color="#d0bcff" if is_active else OUTLINE),
+                width=44, height=44,
+                border_radius=22,
                 bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-                border=ft.Border.all(2, "#8b5cf6") if is_active else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                border=ft.Border.all(2, "#d0bcff") if is_active else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
                 alignment=ft.Alignment.CENTER,
             )
 
         def on_switch(e, aid=acc_id):
             _set_active_account_file(aid)
             refresh_accounts()
-            toast(f"Compte actif : {username}", "success")
+            toast(f"Compte actif : {display_name}", "success")
 
         def on_remove(e, aid=acc_id):
             def confirm(ev):
@@ -1246,14 +1298,14 @@ def main(page: ft.Page):
                 except Exception as ex:
                     toast(f"Erreur suppression : {ex}", "error")
                 refresh_accounts()
-                toast(f"Compte {username} supprimé", "warning")
+                toast(f"Compte {display_name} supprimé", "warning")
 
             def cancel(ev):
                 _close_dialog(dlg)
 
             dlg = ft.AlertDialog(
                 title=ft.Text("Supprimer ce compte ?"),
-                content=ft.Text(f"Supprimer {username} de la liste des comptes ?"),
+                content=ft.Text(f"Supprimer {display_name} de la liste des comptes ?"),
                 actions=[
                     ft.TextButton("Annuler", on_click=cancel),
                     ft.FilledButton("Supprimer", on_click=confirm,
@@ -1265,14 +1317,21 @@ def main(page: ft.Page):
 
         active_badge = ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.CHECK_CIRCLE, size=10, color="#8b5cf6"),
-                ft.Text("actif", size=9, color="#8b5cf6"),
+                ft.Icon(ft.Icons.CHECK_CIRCLE, size=10, color="#d0bcff"),
+                ft.Text("actif", size=9, color="#d0bcff"),
             ], spacing=2),
-            bgcolor="#1a1040",
+            bgcolor="#2d2148",
             border_radius=6,
             padding=ft.Padding.symmetric(horizontal=4, vertical=1),
             visible=is_active,
         )
+        profile_incomplete = bool(profile_error) or username == "Profil à actualiser"
+        status_line = (
+            "Profil incomplet"
+            if profile_incomplete
+            else f"{uploads} upload{'s' if uploads != 1 else ''}"
+        )
+        status_color = WARN_C if profile_incomplete else OUTLINE
 
         card = ft.Container(
             content=ft.Row([
@@ -1286,19 +1345,29 @@ def main(page: ft.Page):
                 ft.Column([
                     ft.Row([
                         ft.Text(
-                            username[:18],
+                            display_name,
                             size=12,
                             weight=ft.FontWeight.BOLD if is_active else None,
                             color="white" if is_active else ON_SURFACE,
                             expand=True,
+                            no_wrap=True,
+                            overflow=ft.TextOverflow.ELLIPSIS,
                         ),
                         active_badge,
                     ], spacing=4),
                     ft.Text(
-                        f"{uploads} upload{'s' if uploads != 1 else ''}",
+                        username,
                         size=10, color=OUTLINE,
+                        no_wrap=True,
+                        overflow=ft.TextOverflow.ELLIPSIS,
                     ),
-                ], spacing=1, expand=True),
+                    ft.Text(
+                        status_line,
+                        size=10, color=status_color,
+                        no_wrap=True,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                    ),
+                ], spacing=0, expand=True),
                 # Bouton supprimer
                 ft.IconButton(
                     ft.Icons.CLOSE,
@@ -1311,10 +1380,11 @@ def main(page: ft.Page):
             ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH if is_active else ft.Colors.SURFACE_CONTAINER,
             border_radius=8,
-            padding=ft.Padding.symmetric(horizontal=10, vertical=6),
-            border=ft.Border.all(1, "#8b5cf6") if is_active else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=8),
+            border=ft.Border.all(1, "#d0bcff") if is_active else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
             on_click=on_switch,
             ink=True,
+            tooltip=profile_error or None,
         )
         return card
 
@@ -1337,6 +1407,33 @@ def main(page: ft.Page):
                 toast(msg, kind),
                 refresh_accounts(),
                 refresh_all(),
+            ))
+        threading.Thread(target=do, daemon=True).start()
+
+    def refresh_profiles(e=None):
+        """Récupère nom + avatar de tous les comptes TikTok."""
+        _no_win = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        def do():
+            page.run_thread(lambda: _start_action_log("Actualisation profils TikTok"))
+            proc = subprocess.Popen(
+                [
+                    PYTHON,
+                    "-c",
+                    "from tiktok_account_manager import refresh_all_profiles; import json; print(json.dumps(refresh_all_profiles(), ensure_ascii=False, indent=2))",
+                ],
+                cwd=str(BASE_DIR),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                creationflags=_no_win,
+            )
+            _stream_proc_to_log(proc)
+            ok = proc.returncode == 0
+            page.run_thread(lambda: (
+                _end_action_log(ok, "Profils TikTok actualisés" if ok else "Actualisation profils échouée"),
+                toast("Profils TikTok actualisés" if ok else "Actualisation profils échouée", "success" if ok else "error"),
+                refresh_accounts(),
             ))
         threading.Thread(target=do, daemon=True).start()
 
@@ -1656,6 +1753,13 @@ def main(page: ft.Page):
                 ),
                 width=240,
             ),
+            ft.TextButton(
+                "Actualiser noms et photos",
+                icon=ft.Icons.SYNC,
+                on_click=refresh_profiles,
+                style=ft.ButtonStyle(color=OUTLINE),
+                width=240,
+            ),
             ft.Divider(height=1, color=ft.Colors.OUTLINE_VARIANT),
 
             # ── Scheduler ────────────────────────────────
@@ -1714,6 +1818,12 @@ def main(page: ft.Page):
                 title=ft.Text("Ouvrir download/", size=13),
                 subtitle=ft.Text("Vidéos en attente", size=11),
                 on_click=open_download_folder, dense=True,
+            ),
+            ft.ListTile(
+                leading=ft.Icon(ft.Icons.RESTART_ALT, size=20, color=WARN_C),
+                title=ft.Text("Réinitialiser pipeline", size=13, color=WARN_C),
+                subtitle=ft.Text("Relance les étapes depuis l'état zéro", size=11),
+                on_click=reset_pipeline_state, dense=True,
             ),
             ft.ListTile(
                 leading=ft.Icon(ft.Icons.DELETE_SWEEP, size=20, color=WARN_C),

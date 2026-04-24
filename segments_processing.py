@@ -188,19 +188,20 @@ def rewrite_transcript_with_intervenants_gpt(
     except Exception as e:
         log.warning("Claude CLI indisponible pour réécriture intervenants (%s) → fallback OpenAI", e)
 
-    # ── Tentative 2 : OpenAI (fallback) ──────────────────────────────────────
+    # ── Tentative 2 : OpenAI (fallback DÉSACTIVÉ — coûte des crédits) ───────────
     if texte_modele is None:
-        modele = modele_openai or os.getenv("OPENAI_MODEL", "gpt-5")
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        reponse = client.chat.completions.create(
-            model=modele,
-            messages=[
-                {"role": "system", "content": PROMPT_SYSTEM},
-                {"role": "user",   "content": PROMPT_USER},
-            ],
-        )
-        texte_modele = (reponse.choices[0].message.content or "").strip()
-        log.info("Réécriture intervenants via OpenAI (%s)", modele)
+        raise RuntimeError("Claude CLI indisponible pour la réécriture intervenants et fallback OpenAI désactivé.")
+        # modele = modele_openai or os.getenv("OPENAI_MODEL", "gpt-5")
+        # client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        # reponse = client.chat.completions.create(
+        #     model=modele,
+        #     messages=[
+        #         {"role": "system", "content": PROMPT_SYSTEM},
+        #         {"role": "user",   "content": PROMPT_USER},
+        #     ],
+        # )
+        # texte_modele = (reponse.choices[0].message.content or "").strip()
+        # log.info("Réécriture intervenants via OpenAI (%s)", modele)
 
     # Si le modèle renvoie un bloc ```…```, on l’extrait proprement
     bloc = re.search(r"```(?:\w+)?\s*([\s\S]*?)\s*```", texte_modele)

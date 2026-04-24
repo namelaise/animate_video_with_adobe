@@ -32,16 +32,19 @@ TIKTOK_USER_ACCESS_TOKEN, le compte existant est importé comme "acc_1".
 import json
 import os
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+BASE_DIR = Path(__file__).resolve().parent
 
-ACCOUNTS_FILE = Path("config/tiktok_accounts.json")
-AVATARS_DIR   = Path("config/avatars")
+load_dotenv(BASE_DIR / ".env")
+
+ACCOUNTS_FILE = BASE_DIR / "config" / "tiktok_accounts.json"
+AVATARS_DIR   = BASE_DIR / "config" / "avatars"
 
 TIKTOK_USER_INFO_URL = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,avatar_url,display_name,username"
 
@@ -107,20 +110,47 @@ def _migrate_from_env_if_needed() -> None:
 # Profil TikTok
 # ─────────────────────────────────────────────
 
-def _fetch_and_update_profile(acc: dict) -> None:
+def _rel_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(BASE_DIR))
+    except ValueError:
+        return str(path)
+
+
+def _profile_placeholder(acc: dict) -> bool:
+    username = (acc.get("username") or "").strip().lower()
+    display = (acc.get("display_name") or "").strip().lower()
+    return (
+        not username
+        or username.startswith("(compte")
+        or not display
+        or display.startswith("(compte")
+    )
+
+
+def _fetch_and_update_profile(acc: dict) -> bool:
     """Appelle l'API TikTok pour récupérer username, display_name et avatar."""
     token = acc.get("access_token", "")
     if not token:
-        return
+        acc["profile_error"] = "Aucun access_token"
+        return False
     try:
-        import urllib.request as _req
-        req = _req.Request(
+        req = urllib.request.Request(
             TIKTOK_USER_INFO_URL,
-            headers={"Authorization": f"Bearer {token}"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "User-Agent": "MrMartin/1.0",
+            },
         )
-        with _req.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode())
+        if data.get("error", {}).get("code") not in (None, "ok"):
+            acc["profile_error"] = json.dumps(data.get("error"), ensure_ascii=False)
+            return False
         user = data.get("data", {}).get("user", {})
+        if not user:
+            acc["profile_error"] = "Réponse TikTok sans data.user"
+            return False
         if user.get("username"):
             acc["username"] = "@" + user["username"].lstrip("@")
         if user.get("display_name"):
@@ -133,8 +163,20 @@ def _fetch_and_update_profile(acc: dict) -> None:
             local = download_avatar(user["avatar_url"], acc["id"])
             if local:
                 acc["avatar_local"] = local
-    except Exception:
-        pass  # profil enrichi en best-effort
+        acc["profile_error"] = ""
+        acc["profile_refreshed_at"] = datetime.now().isoformat(timespec="seconds")
+        return True
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode(errors="ignore")[:300]
+        except Exception:
+            pass
+        acc["profile_error"] = f"HTTP {e.code}: {body or e.reason}"
+        return False
+    except Exception as e:
+        acc["profile_error"] = str(e)
+        return False
 
 
 def download_avatar(avatar_url: str, account_id: str) -> str:
@@ -144,21 +186,42 @@ def download_avatar(avatar_url: str, account_id: str) -> str:
     try:
         AVATARS_DIR.mkdir(parents=True, exist_ok=True)
         dest = AVATARS_DIR / f"{account_id}.jpg"
-        import urllib.request as _req
-        _req.urlretrieve(avatar_url, str(dest))
-        return str(dest)
+        req = urllib.request.Request(avatar_url, headers={"User-Agent": "MrMartin/1.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            dest.write_bytes(resp.read())
+        return _rel_path(dest)
     except Exception:
         return ""
 
 
-def refresh_profile(account_id: str) -> None:
+def refresh_profile(account_id: str) -> bool:
     """Refetch le profil TikTok pour un compte (après refresh token par ex.)."""
     store = _load_store()
     acc = store["accounts"].get(account_id)
     if not acc:
-        return
-    _fetch_and_update_profile(acc)
+        return False
+    ok = _fetch_and_update_profile(acc)
     _save_store(store)
+    return ok
+
+
+def refresh_all_profiles() -> dict:
+    """Refetch tous les profils TikTok et retourne un résumé."""
+    _migrate_from_env_if_needed()
+    store = _load_store()
+    summary = {"ok": 0, "failed": 0, "accounts": []}
+    for acc in store.get("accounts", {}).values():
+        ok = _fetch_and_update_profile(acc)
+        summary["ok" if ok else "failed"] += 1
+        summary["accounts"].append({
+            "id": acc.get("id"),
+            "username": acc.get("username"),
+            "display_name": acc.get("display_name"),
+            "ok": ok,
+            "error": acc.get("profile_error", ""),
+        })
+    _save_store(store)
+    return summary
 
 
 # ─────────────────────────────────────────────
@@ -243,9 +306,9 @@ def add_or_update_account(
         acc_id = f"acc_{next_num}"
 
     # Déterminer le fichier de tokens
-    tokens_file = f"config/tiktok_tokens_{acc_id}.json"
+    tokens_file = ACCOUNTS_FILE.parent / f"tiktok_tokens_{acc_id}.json"
     if acc_id == "acc_1":
-        tokens_file = "config/tiktok_tokens.json"  # compat ancien
+        tokens_file = ACCOUNTS_FILE.parent / "tiktok_tokens.json"  # compat ancien
 
     # Écrire le fichier de tokens
     Path(tokens_file).parent.mkdir(parents=True, exist_ok=True)
@@ -267,12 +330,12 @@ def add_or_update_account(
     acc["avatar_local"]  = acc.get("avatar_local", "")
     acc["access_token"]  = access_token
     acc["refresh_token"] = refresh_token
-    acc["tokens_file"]   = tokens_file
+    acc["tokens_file"]   = _rel_path(Path(tokens_file))
     acc["upload_count"]  = acc.get("upload_count", 0)
     acc["added_at"]      = acc.get("added_at", datetime.now().isoformat(timespec="seconds"))
 
     # Fetch profil TikTok si pas encore de username
-    if not username and not acc.get("username", "").startswith("@"):
+    if not username and _profile_placeholder(acc):
         _fetch_and_update_profile(acc)
 
     # Télécharger avatar si URL fournie et pas encore en local
@@ -342,6 +405,8 @@ def update_tokens(account_id: str, access_token: str, refresh_token: str) -> Non
     acc["refresh_token"] = refresh_token
     # Mettre à jour le fichier de tokens
     tokens_file = Path(acc.get("tokens_file", f"config/tiktok_tokens_{account_id}.json"))
+    if not tokens_file.is_absolute():
+        tokens_file = BASE_DIR / tokens_file
     try:
         existing = {}
         if tokens_file.exists():
@@ -351,6 +416,7 @@ def update_tokens(account_id: str, access_token: str, refresh_token: str) -> Non
         tokens_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
         pass
+    _fetch_and_update_profile(acc)
     _save_store(store)
 
 
