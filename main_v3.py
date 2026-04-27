@@ -1088,28 +1088,34 @@ async def _gemini_generate_image(prompt: str, output_path: str) -> bool:
                     () => [...document.querySelectorAll('img')]
                         .filter(img => {
                             const src = img.src || '';
-                            const w = img.naturalWidth;
-                            const h = img.naturalHeight;
-                            return w > 300 && h > 300
+                            return img.naturalWidth > 500 && img.naturalHeight > 500
                                 && !src.includes('avatar')
                                 && !src.includes('favicon')
                                 && !src.includes('logo')
                                 && !src.includes('icon')
-                                && (src.includes('blob:') || src.includes('googleusercontent')
-                                    || src.includes('data:image'));
+                                && !src.includes('gstatic.com/images/branding')
+                                && src !== '';
                         })
                         .map(img => ({src: img.src, w: img.naturalWidth, h: img.naturalHeight}))
                 """)
                 if imgs:
                     best = max(imgs, key=lambda x: x['w'] * x['h'])
                     img_url = best['src']
-                    log.info(f"[Gemini] Image trouvée à t={i*5+5}s ({best['w']}x{best['h']})")
+                    log.info(f"[Gemini] Image trouvée à t={i*5+5}s ({best['w']}x{best['h']}) — {best['src'][:80]}")
                     break
                 if i % 3 == 0:
                     log.info(f"[Gemini] t={i*5+5}s — attente image...")
 
             if not img_url:
                 log.warning("[Gemini] Timeout: pas d'image générée")
+                try:
+                    debug_dir = os.path.join(BASE_DIR, "logs")
+                    os.makedirs(debug_dir, exist_ok=True)
+                    debug_path = os.path.join(debug_dir, "gemini_timeout_debug.png")
+                    await page.screenshot(path=debug_path, full_page=True)
+                    log.info(f"[Gemini] Screenshot debug: {debug_path}")
+                except Exception:
+                    pass
                 return False
 
             if await _download_gemini_image(page, output_path):
@@ -1306,21 +1312,21 @@ async def _gemini_generate_multiple(prompts: list[str], output_paths: list[str])
 
             for i, (prompt, output_path) in enumerate(zip(prompts, output_paths)):
                 log.info(f"[Gemini] Image {i+1}/{len(prompts)}...")
-            page = await browser.new_page()
-            await page.add_init_script(
-                "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
-            )
-            try:
-                ok = await _gemini_page_generate(page, prompt, output_path)
-                results.append(ok)
-            except Exception as e:
-                log.warning(f"[Gemini] Image {i+1} exception: {e}")
-                results.append(False)
-            finally:
-                await page.close()
-            # Petite pause entre les générations
-            if i < len(prompts) - 1:
-                await asyncio.sleep(3)
+                page = await browser.new_page()
+                await page.add_init_script(
+                    "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+                )
+                try:
+                    ok = await _gemini_page_generate(page, prompt, output_path)
+                    results.append(ok)
+                except Exception as e:
+                    log.warning(f"[Gemini] Image {i+1} exception: {e}")
+                    results.append(False)
+                finally:
+                    await page.close()
+                # Petite pause entre les générations
+                if i < len(prompts) - 1:
+                    await asyncio.sleep(3)
 
             await browser.close()
     finally:
@@ -1371,21 +1377,33 @@ async def _gemini_page_generate(page, prompt: str, output_path: str) -> bool:
                 () => [...document.querySelectorAll('img')]
                     .filter(img => {
                         const src = img.src || '';
-                        return img.naturalWidth > 300 && img.naturalHeight > 300
+                        return img.naturalWidth > 500 && img.naturalHeight > 500
                             && !src.includes('avatar') && !src.includes('favicon')
                             && !src.includes('logo') && !src.includes('icon')
-                            && (src.includes('blob:') || src.includes('googleusercontent')
-                                || src.includes('data:image'));
+                            && !src.includes('gstatic.com/images/branding')
+                            && src !== '';
                     })
                     .map(img => ({src: img.src, w: img.naturalWidth, h: img.naturalHeight}))
             """)
             if imgs:
                 best = max(imgs, key=lambda x: x['w'] * x['h'])
                 img_url = best['src']
+                log.info(f"[Gemini] Image détectée à t={(i+1)*5}s ({best['w']}x{best['h']}) — {best['src'][:80]}")
                 break
+            if i % 3 == 0:
+                log.info(f"[Gemini] t={(i+1)*5}s — attente image...")
 
         if not img_url:
             log.warning("[Gemini] Timeout: aucune image détectée dans la page")
+            # Screenshot de debug pour analyser ce que Gemini affiche
+            try:
+                debug_dir = os.path.join(BASE_DIR, "logs")
+                os.makedirs(debug_dir, exist_ok=True)
+                debug_path = os.path.join(debug_dir, "gemini_timeout_debug.png")
+                await page.screenshot(path=debug_path, full_page=True)
+                log.info(f"[Gemini] Screenshot debug sauvegardé: {debug_path}")
+            except Exception as se:
+                log.warning(f"[Gemini] Screenshot debug échoué: {se}")
             return False
 
         if await _download_gemini_image(page, output_path):
