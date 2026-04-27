@@ -12,6 +12,8 @@
     .date { color: #666; margin-bottom: 32px; }
     h2 { font-size: 1.2rem; margin: 24px 0 8px; }
     p { margin-bottom: 12px; }
+    ul { margin: 0 0 12px 20px; }
+    ul li { margin-bottom: 6px; }
     a { color: #0066cc; text-decoration: none; }
     a:hover { text-decoration: underline; }
     footer { margin-top: 60px; color: #999; font-size: 0.85rem; }
@@ -20,42 +22,67 @@
 <body>
   <div class="container">
     <h1>Terms of Service</h1>
-    <p class="date">Last updated: April 13, 2026</p>
+    <p class="date">Last updated: April 27, 2026</p>
 
     <h2>1. Acceptance of Terms</h2>
-    <p>By using the Mr Martin application ("the App"), you agree to these Terms of Service. If you do not agree, do not use the App.</p>
+    <p>By downloading, installing, or using the Mr Martin application ("the App"), you ("User") agree to be bound by these Terms of Service. If you do not agree to these terms, do not use the App.</p>
 
     <h2>2. Description of Service</h2>
-    <p>Mr Martin is a desktop application that automates video content creation and publication to TikTok. The App uses the TikTok Content Posting API to publish videos on behalf of authenticated users.</p>
+    <p>Mr Martin is a desktop application designed for independent content creators and social media professionals. The App automates video production — including transcription, captioning, and visual animation — and enables users to publish their own content directly to their own TikTok profiles via the TikTok Content Posting API.</p>
+    <p>The App is a tool that individual creators use to manage and publish content to their own TikTok accounts. Each user authenticates independently with their own TikTok credentials. The App does not manage TikTok accounts on behalf of the developer or any third party.</p>
 
-    <h2>3. TikTok Account Authorization</h2>
-    <p>The App requires you to authorize access to your TikTok account via TikTok's OAuth login. By authorizing, you grant the App permission to:</p>
-    <p>- Read your basic profile information (display name, avatar)<br>
-       - Upload videos to your TikTok inbox as drafts<br>
-       - Publish videos directly to your TikTok profile<br>
-       - Query your account's privacy and interaction settings</p>
-    <p>You may revoke access at any time through your TikTok account settings.</p>
+    <h2>3. TikTok Integration and Authorized Scopes</h2>
+    <p>The App integrates with TikTok's official APIs. By connecting your TikTok account, you grant the App the following permissions, used exclusively on your behalf:</p>
+    <ul>
+      <li><strong>user.info.basic</strong> — to display your TikTok profile (name, avatar) within the App interface, confirming which account is connected.</li>
+      <li><strong>user.info.stats</strong> — to show you your own account statistics (follower count, total likes) within the App's analytics dashboard, for your own monitoring only.</li>
+      <li><strong>video.upload</strong> — to send finished videos to your TikTok inbox as drafts, for you to review and publish manually when direct posting is unavailable.</li>
+      <li><strong>video.publish</strong> — to post completed videos directly to your own TikTok profile with an auto-generated caption.</li>
+      <li><strong>video.list</strong> — to retrieve your own published video performance data (views, likes, comments, shares) and display it within the App's analytics dashboard, so you can monitor the performance of content you published through the App. This data is never displayed on any public website.</li>
+    </ul>
+    <p>You may revoke any of these permissions at any time through TikTok's Settings &gt; Security &gt; Apps and Websites.</p>
 
-    <h2>4. User Responsibilities</h2>
-    <p>You are responsible for all content published through the App to your TikTok account. You agree not to use the App to publish content that violates TikTok's Community Guidelines or any applicable laws.</p>
+    <h2>4. User Eligibility</h2>
+    <p>The App is available to any individual content creator who owns a TikTok account and wishes to automate their content creation workflow. Users must be at least 18 years of age.</p>
 
-    <h2>5. Content Ownership</h2>
-    <p>You retain all rights to the content you create and publish using the App. The App does not claim ownership of any user-generated content.</p>
+    <h2>5. User Responsibilities</h2>
+    <p>You are solely responsible for:</p>
+    <ul>
+      <li>All content created, uploaded, and published through the App to your TikTok account</li>
+      <li>Ensuring your content complies with TikTok's Community Guidelines, Terms of Service, and applicable laws</li>
+      <li>Keeping your OAuth tokens and configuration files secure on your device</li>
+      <li>Any consequences arising from content you publish using the App</li>
+    </ul>
 
-    <h2>6. Privacy</h2>
-    <p>Please refer to our <a href="privacy.html">Privacy Policy</a> for information about how we handle your data.</p>
+    <h2>6. Content Ownership</h2>
+    <p>You retain full ownership of all content you create and publish using the App. The App does not claim any ownership rights over user-generated content. No content published through the App is displayed on any external website or shared with third parties.</p>
 
-    <h2>7. Disclaimer</h2>
-    <p>The App is provided "as is" without warranties of any kind. We are not responsible for any disruptions to TikTok's API services or changes to their platform that may affect the App's functionality.</p>
+    <h2>7. Prohibited Uses</h2>
+    <p>You agree not to use the App to:</p>
+    <ul>
+      <li>Publish content that violates TikTok's Community Guidelines or any applicable laws</li>
+      <li>Spam, harass, or deceive other users</li>
+      <li>Circumvent TikTok's rate limits or API usage policies</li>
+      <li>Publish content belonging to a third party without authorization</li>
+    </ul>
 
-    <h2>8. Limitation of Liability</h2>
-    <p>To the maximum extent permitted by law, the developers of Mr Martin shall not be liable for any indirect, incidental, or consequential damages arising from the use of the App.</p>
+    <h2>8. Privacy</h2>
+    <p>Please refer to our <a href="privacy.html">Privacy Policy</a> for full details on how the App handles your data. In summary: all data is stored locally on your device and is never transmitted to any server other than TikTok's and the App's other third-party API providers.</p>
 
-    <h2>9. Changes to Terms</h2>
-    <p>We may update these Terms from time to time. Continued use of the App after changes constitutes acceptance of the new Terms.</p>
+    <h2>9. Disclaimer of Warranties</h2>
+    <p>The App is provided "as is" without warranties of any kind, express or implied. We do not guarantee uninterrupted operation, compatibility with future versions of TikTok's API, or any specific publishing outcomes. TikTok's API availability and policies are outside our control.</p>
 
-    <h2>10. Contact</h2>
-    <p>For questions about these Terms, please contact us via <a href="https://github.com/namelaise/mr-martin-app">GitHub</a>.</p>
+    <h2>10. Limitation of Liability</h2>
+    <p>To the maximum extent permitted by applicable law, the developers of Mr Martin shall not be liable for any indirect, incidental, special, or consequential damages arising from the use or inability to use the App, including but not limited to loss of content, account suspension, or API service disruptions.</p>
+
+    <h2>11. Changes to Terms</h2>
+    <p>We may update these Terms of Service from time to time. The updated version will be posted on this page with a revised date. Continued use of the App after changes constitutes acceptance of the updated terms.</p>
+
+    <h2>12. Governing Law</h2>
+    <p>These Terms shall be governed by and construed in accordance with applicable law. Any disputes shall be resolved through the appropriate legal channels.</p>
+
+    <h2>13. Contact</h2>
+    <p>For questions about these Terms of Service, please contact us via <a href="https://github.com/namelaise/mr-martin-app">GitHub</a>.</p>
 
     <p><a href="index.html">&larr; Back to homepage</a></p>
 

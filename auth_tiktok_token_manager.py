@@ -229,12 +229,18 @@ def main():
 
     # ── Enregistrement dans le gestionnaire de comptes multi-compte ───────────
     try:
+        import time as _time
         from tiktok_account_manager import add_or_update_account, refresh_profile, set_active_account
         open_id = (tok.get("open_id") or "").strip()
+        now = int(_time.time())
+        expires_at = now + int(tok["expires_in"]) if tok.get("expires_in") else None
+        refresh_expires_at = now + int(tok["refresh_expires_in"]) if tok.get("refresh_expires_in") else None
         acc_id = add_or_update_account(
             access_token=access_token,
             refresh_token=refresh_token,
             open_id=open_id,
+            expires_at=expires_at,
+            refresh_expires_at=refresh_expires_at,
         )
         set_active_account(acc_id)
         if refresh_profile(acc_id):

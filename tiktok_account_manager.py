@@ -275,6 +275,8 @@ def add_or_update_account(
     display_name: str = "",
     avatar_url: str = "",
     account_id: str | None = None,
+    expires_at: int | None = None,
+    refresh_expires_at: int | None = None,
 ) -> str:
     """
     Ajoute ou met à jour un compte.
@@ -316,6 +318,10 @@ def add_or_update_account(
         "access_token":  access_token,
         "refresh_token": refresh_token,
     }
+    if expires_at:
+        token_data["expires_at"] = expires_at
+    if refresh_expires_at:
+        token_data["refresh_expires_at"] = refresh_expires_at
     Path(tokens_file).write_text(
         json.dumps(token_data, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -333,6 +339,10 @@ def add_or_update_account(
     acc["tokens_file"]   = _rel_path(Path(tokens_file))
     acc["upload_count"]  = acc.get("upload_count", 0)
     acc["added_at"]      = acc.get("added_at", datetime.now().isoformat(timespec="seconds"))
+    if expires_at:
+        acc["expires_at"] = expires_at
+    if refresh_expires_at:
+        acc["refresh_expires_at"] = refresh_expires_at
 
     # Fetch profil TikTok si pas encore de username
     if not username and _profile_placeholder(acc):
@@ -395,7 +405,13 @@ def get_refresh_token(account_id: str | None = None) -> str:
     return acc.get("refresh_token", "").strip()
 
 
-def update_tokens(account_id: str, access_token: str, refresh_token: str) -> None:
+def update_tokens(
+    account_id: str,
+    access_token: str,
+    refresh_token: str,
+    expires_at: int | None = None,
+    refresh_expires_at: int | None = None,
+) -> None:
     """Met à jour les tokens d'un compte après refresh."""
     store = _load_store()
     acc = store["accounts"].get(account_id)
@@ -403,6 +419,10 @@ def update_tokens(account_id: str, access_token: str, refresh_token: str) -> Non
         return
     acc["access_token"]  = access_token
     acc["refresh_token"] = refresh_token
+    if expires_at:
+        acc["expires_at"] = expires_at
+    if refresh_expires_at:
+        acc["refresh_expires_at"] = refresh_expires_at
     # Mettre à jour le fichier de tokens
     tokens_file = Path(acc.get("tokens_file", f"config/tiktok_tokens_{account_id}.json"))
     if not tokens_file.is_absolute():
@@ -413,6 +433,10 @@ def update_tokens(account_id: str, access_token: str, refresh_token: str) -> Non
             existing = json.loads(tokens_file.read_text(encoding="utf-8"))
         existing["access_token"]  = access_token
         existing["refresh_token"] = refresh_token
+        if expires_at:
+            existing["expires_at"] = expires_at
+        if refresh_expires_at:
+            existing["refresh_expires_at"] = refresh_expires_at
         tokens_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
         pass
@@ -442,4 +466,41 @@ def get_rotation_status() -> dict:
     return {
         "active":   active_id,
         "accounts": [f"{a['id']}:{a.get('username', '?')}" for a in accounts],
+    }
+
+
+def get_token_expiry_info(account_id: str | None = None) -> dict:
+    """
+    Retourne des infos sur l'expiry du token d'un compte.
+    Résultat: {
+        'expires_at': int | None,
+        'refresh_expires_at': int | None,
+        'access_expired': bool,
+        'refresh_expired': bool,
+        'access_days_left': int | None,   # None si inconnue
+        'refresh_days_left': int | None,
+    }
+    """
+    _migrate_from_env_if_needed()
+    store = _load_store()
+    if account_id is None:
+        account_id = store.get("active_account_id")
+    acc = store["accounts"].get(account_id or "", {})
+    now = int(time.time())
+
+    expires_at         = acc.get("expires_at")
+    refresh_expires_at = acc.get("refresh_expires_at")
+
+    def days_left(ts):
+        if not ts:
+            return None
+        return max(0, int((int(ts) - now) / 86400))
+
+    return {
+        "expires_at":         expires_at,
+        "refresh_expires_at": refresh_expires_at,
+        "access_expired":     bool(expires_at and int(expires_at) < now),
+        "refresh_expired":    bool(refresh_expires_at and int(refresh_expires_at) < now),
+        "access_days_left":   days_left(expires_at),
+        "refresh_days_left":  days_left(refresh_expires_at),
     }

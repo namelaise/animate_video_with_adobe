@@ -12,6 +12,8 @@
     .date { color: #666; margin-bottom: 32px; }
     h2 { font-size: 1.2rem; margin: 24px 0 8px; }
     p { margin-bottom: 12px; }
+    ul { margin: 0 0 12px 20px; }
+    ul li { margin-bottom: 6px; }
     a { color: #0066cc; text-decoration: none; }
     a:hover { text-decoration: underline; }
     footer { margin-top: 60px; color: #999; font-size: 0.85rem; }
@@ -20,54 +22,70 @@
 <body>
   <div class="container">
     <h1>Privacy Policy</h1>
-    <p class="date">Last updated: April 13, 2026</p>
+    <p class="date">Last updated: April 27, 2026</p>
 
     <h2>1. Introduction</h2>
-    <p>This Privacy Policy explains how the Mr Martin application ("the App") collects, uses, and protects your information.</p>
+    <p>Mr Martin ("the App", "we", "us") is a desktop application that allows content creators to automate video production and publish videos directly to their own TikTok profiles. This Privacy Policy explains what information the App accesses, how it is used, and how it is protected for each user.</p>
 
-    <h2>2. Information We Collect</h2>
-    <p>The App collects only the minimum information necessary to function:</p>
-    <p>- <strong>TikTok OAuth tokens</strong>: access token and refresh token, stored locally on your computer in the <code>.env</code> file and <code>config/tiktok_tokens.json</code>.<br>
-       - <strong>Basic TikTok profile information</strong>: display name and avatar URL, retrieved via the TikTok API to verify your identity.<br>
-       - <strong>Creator account settings</strong>: privacy level options and interaction preferences, queried before each post to ensure compliance.</p>
+    <h2>2. Who We Are</h2>
+    <p>Mr Martin is a content creation tool available to independent content creators and social media professionals. Users authenticate with their own TikTok account to publish content they own. The App does not operate or manage TikTok accounts on behalf of the developer.</p>
 
-    <h2>3. How We Use Your Information</h2>
-    <p>Your information is used exclusively to:</p>
-    <p>- Authenticate with the TikTok API on your behalf<br>
-       - Publish videos to your TikTok account<br>
-       - Respect your account's privacy and interaction settings when posting</p>
+    <h2>3. Information the App Accesses</h2>
+    <p>When a user connects their TikTok account, the App accesses the following data through the TikTok API, solely on behalf of that authenticated user:</p>
+    <ul>
+      <li><strong>Basic profile information</strong> (open_id, display name, avatar URL) — used to identify the connected account within the App interface.</li>
+      <li><strong>OAuth access and refresh tokens</strong> — used to authenticate API requests on behalf of the user. Stored locally on the user's own device.</li>
+      <li><strong>Creator account settings</strong> (privacy level options, interaction preferences) — queried before each post to ensure compliance with the user's account settings.</li>
+      <li><strong>Published video metadata</strong> (titles, view counts, like counts, share counts, comment counts) — accessed via the Video Query API to display performance analytics to the authenticated user within the App only.</li>
+      <li><strong>Account statistics</strong> (follower count, following count, total likes, video count) — displayed to the authenticated user for content performance monitoring.</li>
+    </ul>
 
-    <h2>4. Data Storage</h2>
-    <p>All data is stored locally on your computer. The App does not transmit your personal data to any server other than TikTok's official API endpoints. No data is stored in the cloud or shared with third parties.</p>
+    <h2>4. How We Use This Information</h2>
+    <p>All data accessed through the TikTok API is used exclusively to provide the App's features to the authenticated user:</p>
+    <ul>
+      <li>Authenticate API requests using the user's OAuth tokens</li>
+      <li>Publish videos to the user's own TikTok profile on their behalf</li>
+      <li>Display the user's own video performance metrics within the App dashboard</li>
+      <li>Respect the user's account privacy and interaction settings when posting</li>
+    </ul>
+    <p>The App does not display TikTok content on any public website, does not aggregate data from multiple users, and does not share any user data with third parties.</p>
 
-    <h2>5. Third-Party Services</h2>
-    <p>The App interacts with the following third-party services:</p>
-    <p>- <strong>TikTok Content Posting API</strong>: to publish videos and query account settings<br>
-       - <strong>TikTok Login Kit</strong>: for OAuth authentication<br>
-       - <strong>AssemblyAI</strong>: for audio transcription (audio files are sent to their API for processing)<br>
-       - <strong>OpenAI</strong>: for AI-powered text generation (text data is sent to their API)</p>
-    <p>Each third-party service is governed by its own privacy policy.</p>
+    <h2>5. Data Storage</h2>
+    <p>All data is stored locally on the user's own device. The App does not operate any cloud server or database. OAuth tokens, profile information, and video metadata are saved in local configuration files accessible only to the user. No personal data leaves the user's device except through direct calls to TikTok's official API endpoints.</p>
 
-    <h2>6. Data Retention</h2>
-    <p>OAuth tokens are stored locally until you revoke access or delete them. Video files and transcriptions are processed locally and can be deleted at any time by the user.</p>
+    <h2>6. Third-Party Services</h2>
+    <p>The App integrates with the following third-party services to provide its functionality:</p>
+    <ul>
+      <li><strong>TikTok Login Kit</strong> — for OAuth authentication</li>
+      <li><strong>TikTok Content Posting API</strong> — to publish videos to the user's profile</li>
+      <li><strong>TikTok Video Query API</strong> — to retrieve the user's own video performance data for in-app analytics</li>
+      <li><strong>AssemblyAI</strong> — for audio transcription (audio data is sent to their API; governed by AssemblyAI's privacy policy)</li>
+      <li><strong>OpenAI</strong> — for AI-generated captions (text data is sent to their API; governed by OpenAI's privacy policy)</li>
+    </ul>
 
-    <h2>7. Your Rights</h2>
-    <p>You can at any time:</p>
-    <p>- Revoke the App's access to your TikTok account via TikTok's settings<br>
-       - Delete all locally stored tokens and data<br>
-       - Uninstall the App entirely</p>
+    <h2>7. Data Retention</h2>
+    <p>OAuth tokens remain on the user's device until revoked or deleted. Video files, transcripts, and captions are generated and stored locally; users may delete them at any time. The App does not retain any user data after uninstallation.</p>
 
-    <h2>8. Data Security</h2>
-    <p>OAuth tokens are stored in local configuration files on your machine. We recommend keeping your computer secure and not sharing these files.</p>
+    <h2>8. Your Rights</h2>
+    <p>As a user of the App, you may at any time:</p>
+    <ul>
+      <li>Revoke the App's access to your TikTok account via TikTok's Settings &gt; Security &gt; Apps and Websites</li>
+      <li>Delete all locally stored tokens and configuration files</li>
+      <li>Request deletion of any data held about you by contacting us (see Section 11)</li>
+      <li>Uninstall the App entirely</li>
+    </ul>
 
-    <h2>9. Children's Privacy</h2>
-    <p>The App is not intended for use by anyone under the age of 18.</p>
+    <h2>9. Data Security</h2>
+    <p>OAuth tokens are stored in local configuration files on the user's machine. We recommend keeping your device secure and not sharing configuration files with others. The App transmits data only over HTTPS to TikTok's and third-party API endpoints.</p>
 
-    <h2>10. Changes to This Policy</h2>
-    <p>We may update this Privacy Policy from time to time. Changes will be posted on this page with an updated date.</p>
+    <h2>10. Children's Privacy</h2>
+    <p>The App is intended for content creators aged 18 and older. We do not knowingly collect information from minors.</p>
 
-    <h2>11. Contact</h2>
-    <p>For questions about this Privacy Policy, please contact us via <a href="https://github.com/namelaise/mr-martin-app">GitHub</a>.</p>
+    <h2>11. Changes to This Policy</h2>
+    <p>We may update this Privacy Policy from time to time. The updated version will be posted on this page with a revised date. Continued use of the App after changes constitutes acceptance of the updated policy.</p>
+
+    <h2>12. Contact</h2>
+    <p>For questions or data deletion requests regarding this Privacy Policy, please contact us via <a href="https://github.com/namelaise/mr-martin-app">GitHub</a>.</p>
 
     <p><a href="index.html">&larr; Back to homepage</a></p>
 

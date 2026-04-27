@@ -132,16 +132,22 @@ def refresh_access_token(account_id: str) -> None:
         print(json.dumps(token_resp, indent=2, ensure_ascii=False))
         raise SystemExit(1)
 
-    # Sauvegarder dans le gestionnaire de comptes
-    update_tokens(account_id, new_access, new_refresh)
-    log(f"✅ Tokens mis à jour pour {account_id}")
+    # Sauvegarder dans le gestionnaire de comptes (avec expiry)
+    update_tokens(
+        account_id,
+        new_access,
+        new_refresh,
+        expires_at=token_resp.get("expires_at"),
+        refresh_expires_at=token_resp.get("refresh_expires_at"),
+    )
+    log(f"[OK] Tokens mis à jour pour {account_id}")
 
     # Rétro-compat .env si c'est le compte actif
     active_id = get_active_account_id()
     if account_id == active_id:
         _update_dotenv("TIKTOK_USER_ACCESS_TOKEN", new_access)
         _update_dotenv("TIKTOK_USER_REFRESH_TOKEN", new_refresh)
-        log(f"✅ .env mis à jour (compte actif {account_id})")
+        log(f"[OK] .env mis à jour (compte actif {account_id})")
 
     exp_in = token_resp.get("expires_in")
     exp_at = token_resp.get("expires_at")

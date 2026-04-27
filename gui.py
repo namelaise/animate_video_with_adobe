@@ -732,8 +732,19 @@ def main(page: ft.Page):
         page.update()
 
         def do():
+            # Récupérer le token du compte actif depuis le gestionnaire
+            _accounts_data, _active_id = _load_accounts_data()
+            _active_tok = ""
+            if _active_id:
+                for _a in _accounts_data:
+                    if _a.get("id") == _active_id:
+                        _active_tok = (_a.get("access_token") or "").strip()
+                        break
+            _post_cmd = [PYTHON, "-u", "post_tiktok_inbox.py", "--video", str(vp), "--poll"]
+            if _active_tok:
+                _post_cmd += ["--token", _active_tok]
             proc = subprocess.Popen(
-                [PYTHON, "-u", "post_tiktok_inbox.py", "--video", str(vp), "--poll"],
+                _post_cmd,
                 cwd=str(BASE_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, bufsize=1,
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -1333,6 +1344,30 @@ def main(page: ft.Page):
         )
         status_color = WARN_C if profile_incomplete else OUTLINE
 
+        # Token expiry status
+        import time as _time
+        _now = int(_time.time())
+        _expires_at = acc.get("expires_at")
+        _ref_expires_at = acc.get("refresh_expires_at")
+        if _expires_at:
+            _secs_left = int(_expires_at) - _now
+            if _secs_left <= 0:
+                token_line = "Token expiré !"
+                token_color = ERROR_C
+            elif _secs_left < 3600:
+                token_line = f"Token expire dans {_secs_left // 60}min"
+                token_color = WARN_C
+            elif _secs_left < 86400:
+                token_line = f"Token expire dans {_secs_left // 3600}h"
+                token_color = WARN_C
+            else:
+                days = _secs_left // 86400
+                token_line = f"Token valide ({days}j)"
+                token_color = SUCCESS
+        else:
+            token_line = ""
+            token_color = OUTLINE
+
         card = ft.Container(
             content=ft.Row([
                 # Avatar
@@ -1366,6 +1401,13 @@ def main(page: ft.Page):
                         size=10, color=status_color,
                         no_wrap=True,
                         overflow=ft.TextOverflow.ELLIPSIS,
+                    ),
+                    ft.Text(
+                        token_line,
+                        size=10, color=token_color,
+                        no_wrap=True,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                        visible=bool(token_line),
                     ),
                 ], spacing=0, expand=True),
                 # Bouton supprimer
