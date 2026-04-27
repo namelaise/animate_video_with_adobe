@@ -11,6 +11,12 @@ from datetime import datetime
 import sys
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
+
+# Force UTF-8 sur stdout/stderr (Windows cp1252 bloque les emojis dans les logs)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 from scraper_tiktok import scrape_accounts, DEFAULT_ACCOUNTS, DEFAULT_DAILY_LIMIT, get_daily_count
 
 

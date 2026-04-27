@@ -676,7 +676,7 @@ def main(page: ft.Page):
         if is_running():
             return
         scheduler_proc["ref"] = subprocess.Popen(
-            [PYTHON, "-u", "auto_scheduler.py"], cwd=str(BASE_DIR),
+            [PYTHON, "-X", "utf8", "-u", "auto_scheduler.py"], cwd=str(BASE_DIR),
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         )
         toast("Scheduler demarre", "success")

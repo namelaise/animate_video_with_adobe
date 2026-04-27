@@ -14,6 +14,12 @@ import logging
 import shlex
 import socket
 
+# Force UTF-8 sur stdout/stderr (Windows cp1252 bloque les emojis dans les logs)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from typing import List, Dict, Tuple, Optional
 from pathlib import Path
 from datetime import datetime
@@ -322,21 +328,20 @@ def generate_tiktok_description(transcript_path: str) -> str:
         except Exception as e:
             log.warning("Claude CLI indisponible pour description (%s) → fallback OpenAI", e)
 
-        # ── Tentative 2 : OpenAI fallback (DÉSACTIVÉ — coûte des crédits) ────────
+        # ── Tentative 2 : OpenAI fallback ─────────────────────────────────────
         if not description:
-            raise RuntimeError("Claude CLI indisponible pour la description TikTok et fallback OpenAI désactivé.")
-            # client = OpenAI()
-            # resp = client.chat.completions.create(
-            #     model="gpt-4o-mini",
-            #     messages=[
-            #         {"role": "system", "content": system_instruction},
-            #         {"role": "user", "content": dialogue_text},
-            #     ],
-            #     max_tokens=150,
-            #     temperature=0.8,
-            # )
-            # description = (resp.choices[0].message.content or "").strip()
-            # log.info("Description TikTok generee via OpenAI gpt-4o-mini")
+            client = OpenAI()
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_instruction},
+                    {"role": "user", "content": dialogue_text},
+                ],
+                max_tokens=150,
+                temperature=0.8,
+            )
+            description = (resp.choices[0].message.content or "").strip()
+            log.info("Description TikTok generee via OpenAI gpt-4o-mini")
 
         if "#mrmartin" not in description.lower():
             description += " #mrmartin"
@@ -940,12 +945,32 @@ class ModerationRejectedError(RuntimeError):
 
 # ── Gemini Playwright ─────────────────────────────────────────────────────────
 
+def _prepare_gemini_profile() -> str:
+    """Copie le profil Chrome de base vers un profil temporaire pour Gemini.
+    Retourne le chemin du profil temporaire."""
+    if os.path.exists(GEMINI_PROFILE_PATH):
+        shutil.rmtree(GEMINI_PROFILE_PATH, ignore_errors=True)
+    Path(GEMINI_PROFILE_PATH).parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(BASE_PROFILE_PATH, GEMINI_PROFILE_PATH, dirs_exist_ok=True)
+    log.info("[Gemini] Profil temporaire créé: %s", GEMINI_PROFILE_PATH)
+    return GEMINI_PROFILE_PATH
+
+
+def _cleanup_gemini_profile():
+    """Supprime le profil temporaire Gemini."""
+    try:
+        if os.path.exists(GEMINI_PROFILE_PATH):
+            shutil.rmtree(GEMINI_PROFILE_PATH, ignore_errors=True)
+    except Exception:
+        pass
+
+
 def _cleanup_chrome_profile_lock() -> None:
     """
     Supprime le lockfile Chrome si présent (zombie d'un run précédent crashé).
     Tue d'abord tous les processus Chrome utilisant ce profil.
     """
-    lockfile = os.path.join(BASE_PROFILE_PATH, "lockfile")
+    lockfile = os.path.join(GEMINI_PROFILE_PATH, "lockfile")
     if not os.path.exists(lockfile):
         return
 
@@ -976,6 +1001,10 @@ BASE_PROFILE_PATH = os.getenv(
     "BASE_PROFILE_PATH",
     r"C:\Users\n.amelaise\Desktop\martinV2\animate_video_with_adobe\playwright-profile"
 )
+GEMINI_PROFILE_PATH = os.path.join(
+    os.getenv("BASE_DIR", str(Path(__file__).parent)),
+    "profiles", "tmp_gemini_profile"
+)
 CHROME_PATH_GEMINI = os.getenv(
     "CHROME_PATH",
     r"C:\Program Files\Google\Chrome\Application\chrome.exe"
@@ -989,11 +1018,12 @@ async def _gemini_generate_image(prompt: str, output_path: str) -> bool:
     """
     from playwright.async_api import async_playwright
 
+    _prepare_gemini_profile()
     _cleanup_chrome_profile_lock()
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch_persistent_context(
-            user_data_dir=BASE_PROFILE_PATH,
+            user_data_dir=GEMINI_PROFILE_PATH,
             executable_path=CHROME_PATH_GEMINI,
             headless=True,
             slow_mo=100,
@@ -1253,27 +1283,29 @@ async def _gemini_generate_multiple(prompts: list[str], output_paths: list[str])
     from playwright.async_api import async_playwright
     results = []
 
+    _prepare_gemini_profile()
     _cleanup_chrome_profile_lock()
 
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch_persistent_context(
-            user_data_dir=BASE_PROFILE_PATH,
-            executable_path=CHROME_PATH_GEMINI,
-            headless=True,
-            slow_mo=100,
-            args=["--disable-blink-features=AutomationControlled"],
-            ignore_default_args=["--enable-automation"],
-        )
+    try:
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch_persistent_context(
+                user_data_dir=GEMINI_PROFILE_PATH,
+                executable_path=CHROME_PATH_GEMINI,
+                headless=True,
+                slow_mo=100,
+                args=["--disable-blink-features=AutomationControlled"],
+                ignore_default_args=["--enable-automation"],
+            )
 
-        # Fermer les onglets déjà ouverts par le contexte persistant
-        for existing_page in browser.pages:
-            try:
-                await existing_page.close()
-            except Exception:
-                pass
+            # Fermer les onglets déjà ouverts par le contexte persistant
+            for existing_page in browser.pages:
+                try:
+                    await existing_page.close()
+                except Exception:
+                    pass
 
-        for i, (prompt, output_path) in enumerate(zip(prompts, output_paths)):
-            log.info(f"[Gemini] Image {i+1}/{len(prompts)}...")
+            for i, (prompt, output_path) in enumerate(zip(prompts, output_paths)):
+                log.info(f"[Gemini] Image {i+1}/{len(prompts)}...")
             page = await browser.new_page()
             await page.add_init_script(
                 "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
@@ -1290,7 +1322,9 @@ async def _gemini_generate_multiple(prompts: list[str], output_paths: list[str])
             if i < len(prompts) - 1:
                 await asyncio.sleep(3)
 
-        await browser.close()
+            await browser.close()
+    finally:
+        _cleanup_gemini_profile()
 
     return results
 
