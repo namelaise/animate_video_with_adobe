@@ -959,6 +959,14 @@ def _prepare_gemini_profile() -> str:
         # le profil reste fonctionnel pour l'authentification Gemini.
         skipped = len(e.args[0]) if e.args else "?"
         log.warning("[Gemini] Profil copié avec %s fichier(s) ignoré(s) (verrouillés/invalides)", skipped)
+    # Supprimer le lockfile copié depuis le profil source — il ne doit pas exister
+    # dans le profil temporaire, sinon Chrome refuse de démarrer.
+    for lockfile in ["lockfile", "SingletonLock", "SingletonCookie", "SingletonSocket"]:
+        lf = Path(GEMINI_PROFILE_PATH) / lockfile
+        try:
+            lf.unlink(missing_ok=True)
+        except Exception:
+            pass
     log.info("[Gemini] Profil temporaire créé: %s", GEMINI_PROFILE_PATH)
     return GEMINI_PROFILE_PATH
 
