@@ -946,70 +946,38 @@ class ModerationRejectedError(RuntimeError):
 # ── Gemini Playwright ─────────────────────────────────────────────────────────
 
 def _prepare_gemini_profile() -> str:
-    """Copie le profil Chrome de base vers un profil temporaire pour Gemini.
+    """Copie le profil Chrome de base vers un répertoire temporaire UNIQUE.
+    Chaque run obtient son propre dossier — plus de conflit de lockfile entre runs.
     Retourne le chemin du profil temporaire."""
-    if os.path.exists(GEMINI_PROFILE_PATH):
-        shutil.rmtree(GEMINI_PROFILE_PATH, ignore_errors=True)
-    Path(GEMINI_PROFILE_PATH).parent.mkdir(parents=True, exist_ok=True)
+    import tempfile
+    profiles_dir = os.path.join(
+        os.getenv("BASE_DIR", str(Path(__file__).parent)), "profiles"
+    )
+    os.makedirs(profiles_dir, exist_ok=True)
+    tmp_dir = tempfile.mkdtemp(prefix="gemini_profile_", dir=profiles_dir)
     try:
-        shutil.copytree(BASE_PROFILE_PATH, GEMINI_PROFILE_PATH, dirs_exist_ok=True)
+        shutil.copytree(BASE_PROFILE_PATH, tmp_dir, dirs_exist_ok=True)
     except shutil.Error as e:
-        # Certains fichiers Chrome sont verrouillés (Cookies, SQLite WAL) ou ont
-        # des noms invalides sur Windows — on ignore les erreurs individuelles,
-        # le profil reste fonctionnel pour l'authentification Gemini.
         skipped = len(e.args[0]) if e.args else "?"
         log.warning("[Gemini] Profil copié avec %s fichier(s) ignoré(s) (verrouillés/invalides)", skipped)
-    # Supprimer le lockfile copié depuis le profil source — il ne doit pas exister
-    # dans le profil temporaire, sinon Chrome refuse de démarrer.
+    # Supprimer les lockfiles copiés depuis le profil source
     for lockfile in ["lockfile", "SingletonLock", "SingletonCookie", "SingletonSocket"]:
-        lf = Path(GEMINI_PROFILE_PATH) / lockfile
+        lf = Path(tmp_dir) / lockfile
         try:
             lf.unlink(missing_ok=True)
         except Exception:
             pass
-    log.info("[Gemini] Profil temporaire créé: %s", GEMINI_PROFILE_PATH)
-    return GEMINI_PROFILE_PATH
+    log.info("[Gemini] Profil temporaire créé: %s", tmp_dir)
+    return tmp_dir
 
 
-def _cleanup_gemini_profile():
-    """Supprime le profil temporaire Gemini."""
+def _cleanup_gemini_profile(profile_path: str) -> None:
+    """Supprime le profil temporaire Gemini donné."""
     try:
-        if os.path.exists(GEMINI_PROFILE_PATH):
-            shutil.rmtree(GEMINI_PROFILE_PATH, ignore_errors=True)
+        if os.path.exists(profile_path):
+            shutil.rmtree(profile_path, ignore_errors=True)
     except Exception:
         pass
-
-
-def _cleanup_chrome_profile_lock() -> None:
-    """
-    Supprime le lockfile Chrome si présent (zombie d'un run précédent crashé).
-    Tue d'abord tous les processus Chrome utilisant ce profil.
-    """
-    lockfile = os.path.join(GEMINI_PROFILE_PATH, "lockfile")
-    if not os.path.exists(lockfile):
-        return
-
-    log.warning("[Gemini] lockfile détecté dans le profil Chrome — nettoyage des processus zombie...")
-
-    ps_script = (
-        "Get-WmiObject Win32_Process "
-        "| Where-Object { $_.CommandLine -like '*playwright-profile*' } "
-        "| ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
-    )
-    try:
-        subprocess.run(
-            ["powershell", "-NonInteractive", "-Command", ps_script],
-            capture_output=True, text=True, timeout=15
-        )
-        time.sleep(2)
-    except Exception as e:
-        log.warning(f"[Gemini] Impossible de tuer Chrome zombie: {e}")
-
-    try:
-        os.remove(lockfile)
-        log.info("[Gemini] lockfile supprimé avec succès")
-    except OSError as e:
-        log.warning(f"[Gemini] lockfile toujours verrouillé après tentative de nettoyage: {e}")
 
 
 BASE_PROFILE_PATH = os.getenv(
@@ -1033,12 +1001,11 @@ async def _gemini_generate_image(prompt: str, output_path: str) -> bool:
     """
     from playwright.async_api import async_playwright
 
-    _prepare_gemini_profile()
-    _cleanup_chrome_profile_lock()
-
-    async with async_playwright() as pw:
+    profile_path = _prepare_gemini_profile()
+    try:
+      async with async_playwright() as pw:
         browser = await pw.chromium.launch_persistent_context(
-            user_data_dir=GEMINI_PROFILE_PATH,
+            user_data_dir=profile_path,
             executable_path=CHROME_PATH_GEMINI,
             headless=True,
             slow_mo=100,
@@ -1146,6 +1113,8 @@ async def _gemini_generate_image(prompt: str, output_path: str) -> bool:
         finally:
             await page.close()
             await browser.close()
+    finally:
+        _cleanup_gemini_profile(profile_path)
 
 
 # Variations de cadrage/détail pour les images dynamiques
@@ -1304,13 +1273,12 @@ async def _gemini_generate_multiple(prompts: list[str], output_paths: list[str])
     from playwright.async_api import async_playwright
     results = []
 
-    _prepare_gemini_profile()
-    _cleanup_chrome_profile_lock()
+    profile_path = _prepare_gemini_profile()
 
     try:
         async with async_playwright() as pw:
             browser = await pw.chromium.launch_persistent_context(
-                user_data_dir=GEMINI_PROFILE_PATH,
+                user_data_dir=profile_path,
                 executable_path=CHROME_PATH_GEMINI,
                 headless=True,
                 slow_mo=100,
@@ -1345,7 +1313,7 @@ async def _gemini_generate_multiple(prompts: list[str], output_paths: list[str])
 
             await browser.close()
     finally:
-        _cleanup_gemini_profile()
+        _cleanup_gemini_profile(profile_path)
 
     return results
 
