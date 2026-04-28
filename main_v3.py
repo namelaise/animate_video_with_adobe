@@ -951,7 +951,14 @@ def _prepare_gemini_profile() -> str:
     if os.path.exists(GEMINI_PROFILE_PATH):
         shutil.rmtree(GEMINI_PROFILE_PATH, ignore_errors=True)
     Path(GEMINI_PROFILE_PATH).parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(BASE_PROFILE_PATH, GEMINI_PROFILE_PATH, dirs_exist_ok=True)
+    try:
+        shutil.copytree(BASE_PROFILE_PATH, GEMINI_PROFILE_PATH, dirs_exist_ok=True)
+    except shutil.Error as e:
+        # Certains fichiers Chrome sont verrouillés (Cookies, SQLite WAL) ou ont
+        # des noms invalides sur Windows — on ignore les erreurs individuelles,
+        # le profil reste fonctionnel pour l'authentification Gemini.
+        skipped = len(e.args[0]) if e.args else "?"
+        log.warning("[Gemini] Profil copié avec %s fichier(s) ignoré(s) (verrouillés/invalides)", skipped)
     log.info("[Gemini] Profil temporaire créé: %s", GEMINI_PROFILE_PATH)
     return GEMINI_PROFILE_PATH
 
