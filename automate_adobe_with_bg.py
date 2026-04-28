@@ -20,6 +20,7 @@ import asyncio
 import os
 import re
 import subprocess
+import sys
 import time
 import shutil
 from dataclasses import dataclass
@@ -27,6 +28,12 @@ from pathlib import Path
 from typing import List
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
 from dotenv import load_dotenv
+
+# Forcer UTF-8 sur stdout/stderr pour éviter OSError [Errno 22] sur Windows cp1252
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 load_dotenv()
 
@@ -97,6 +104,46 @@ async def _screenshot(page, tag: str, task: Task):
     except Exception:
         pass
     
+async def _dismiss_adobe_popup(page) -> bool:
+    """Ferme la popup modale promo/inscription Adobe si elle est présente."""
+    close_selectors = [
+        "button[aria-label='Close']",
+        "button[aria-label='Fermer']",
+        "button[aria-label='close']",
+        "[data-testid='close-button']",
+        "sp-dialog button.spectrum-Dialog-closeButton",
+        "div[role='dialog'] button[aria-label*='lose']",
+        "div[role='dialog'] button[aria-label*='ermer']",
+        # Bouton X générique dans un overlay/modal
+        ".spectrum-Modal button.close",
+        "button.spectrum-ClearButton",
+        # Fallback : Escape pour fermer un dialog
+    ]
+    for sel in close_selectors:
+        try:
+            el = page.locator(sel).first
+            if await el.count() > 0 and await el.is_visible(timeout=1000):
+                await el.click(timeout=3000)
+                print(f"✅ Popup Adobe fermée via {sel}")
+                await page.wait_for_timeout(500)
+                return True
+        except Exception:
+            continue
+    # Fallback : Escape
+    try:
+        dialog = page.locator("div[role='dialog'], div[role='alertdialog'], .spectrum-Modal")
+        if await dialog.count() > 0 and await dialog.first.is_visible(timeout=500):
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(500)
+            # Vérifier si le dialog a disparu
+            if not await dialog.first.is_visible(timeout=500):
+                print("✅ Popup Adobe fermée via Escape")
+                return True
+    except Exception:
+        pass
+    return False
+
+
 async def click_no_wait(page, selector: str) -> bool:
     """
     Clique immédiatement si l'élément existe (sans wait), sinon ne fait rien.
@@ -375,16 +422,19 @@ async def _run_task_on_page(context, task: Task):
         # Cookies (best-effort)
         try:
             await click_first(page, [
-                "button:has-text('Activer tout')",
-                "button:has-text('Tout accepter')",
-                "button:has-text('Accepter tout')",
-                "button:has-text('Accept all')",
-                "button:has-text('J’accepte')",
-                "button:has-text(\"J'accepte\")",
-                "button[aria-label*='Accepter']",
+                "button:has-text(‘Activer tout’)",
+                "button:has-text(‘Tout accepter’)",
+                "button:has-text(‘Accepter tout’)",
+                "button:has-text(‘Accept all’)",
+                "button:has-text(‘J’accepte’)",
+                "button:has-text(\"J’accepte\")",
+                "button[aria-label*=’Accepter’]",
             ], timeout=2_500)
         except Exception:
             pass
+
+        # Fermer popup promo/inscription Adobe (bloque toute la page)
+        await _dismiss_adobe_popup(page)
 
         # # Sélection puppet
         # puppet_sel = puppet_selector_for_label(task.nom, task.personnage_id)
@@ -480,15 +530,34 @@ async def _run_task_on_page(context, task: Task):
             await _screenshot(page, "adobe_negative_toast", task)
             raise RuntimeError("Toast d'erreur Adobe")
 
-        await wait_ready_to_download(page)
+        # Fermer popup promo si elle réapparaît pendant le traitement
+        await _dismiss_adobe_popup(page)
+
+        try:
+            await wait_ready_to_download(page)
+        except Exception:
+            # Peut-être la popup est apparue pendant l'attente — re-essayer
+            if await _dismiss_adobe_popup(page):
+                try:
+                    await wait_ready_to_download(page)
+                except Exception:
+                    await _screenshot(page, "download_btn_timeout", task)
+                    raise
+            else:
+                await _screenshot(page, "download_btn_timeout", task)
+                raise
 
         # Download
         filename = _safe_filename(f"{task.nom} - {task.genre} - {task.segment_id}.mp4")
         output_path = os.path.join(VIDEO_SEGMENTS_DIR, filename)
-        async with page.expect_download() as dl_info:
-            await page.locator('#downloadExportOption').click()
-        dl = await dl_info.value
-        await dl.save_as(output_path)
+        try:
+            async with page.expect_download(timeout=DOWNLOAD_TIMEOUT_MS) as dl_info:
+                await page.locator('#downloadExportOption').click()
+            dl = await dl_info.value
+            await dl.save_as(output_path)
+        except Exception:
+            await _screenshot(page, "download_event_timeout", task)
+            raise
 
         if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
             await _screenshot(page, "download_zero", task)
@@ -509,14 +578,49 @@ async def _run_task_on_page(context, task: Task):
 
 # --- Orchestrateur principal (1 navigateur, N pages)
 async def run_pool(tasks: List[Task], concurrency: int = 4, on_progress=None):
-    if os.path.exists(TEMP_PROFILE_PATH):
-        shutil.rmtree(TEMP_PROFILE_PATH, ignore_errors=True)
-    Path(os.path.dirname(TEMP_PROFILE_PATH)).mkdir(parents=True, exist_ok=True)
-    shutil.copytree(BASE_PROFILE_PATH, TEMP_PROFILE_PATH, dirs_exist_ok=True)
+    import tempfile
+    profiles_dir = os.path.dirname(TEMP_PROFILE_PATH)
+    Path(profiles_dir).mkdir(parents=True, exist_ok=True)
+    temp_profile = tempfile.mkdtemp(prefix="adobe_profile_", dir=profiles_dir)
+
+    # Répertoires à exclure lors de la copie du profil de base (caches volumineux,
+    # inutiles et responsables du crash "socket.send() raised exception" causé par
+    # le timeout de copie d'un profil de 2+ Go).
+    _PROFILE_COPY_IGNORE = {
+        # Caches Chrome
+        "Cache", "Code Cache", "GPUCache", "DawnWebGPUCache", "DawnGraphiteCache",
+        "GrShaderCache", "GraphiteDawnCache", "ShaderCache",
+        # Service Worker / Extensions (reconstruits à la volée)
+        "Service Worker", "Extensions",
+        # Données lourdes non nécessaires au login Adobe
+        "History", "Sessions", "Favicons", "shared_proto_db",
+        "BrowsingTopicsSiteData", "BrowsingTopicsState",
+        # Modèles on-device inutiles
+        "optimization_guide_model_store", "OnDeviceHeadSuggestModel",
+        # Profils secondaires (Profile 1, Profile 2, …)
+        "Profile 1", "Profile 2", "Profile 3", "Profile 4",
+        # Crash dumps
+        "Crashpad",
+    }
+
+    def _ignore_caches(src, names):
+        return [n for n in names if n in _PROFILE_COPY_IGNORE]
+
+    try:
+        shutil.copytree(BASE_PROFILE_PATH, temp_profile, dirs_exist_ok=True, ignore=_ignore_caches)
+    except shutil.Error as e:
+        skipped = len(e.args[0]) if e.args else "?"
+        print(f"[Adobe] Profil copie avec {skipped} fichier(s) ignore(s) (verrouillement Windows)")
+    for lf_name in ["lockfile", "SingletonLock", "SingletonCookie", "SingletonSocket"]:
+        lf = Path(temp_profile) / lf_name
+        try:
+            lf.unlink(missing_ok=True)
+        except Exception:
+            pass
 
     async with async_playwright() as p:
         context = await p.chromium.launch_persistent_context(
-            TEMP_PROFILE_PATH,
+            temp_profile,
             executable_path=CHROME_PATH,
             headless=HEADLESS,
             slow_mo=SLOWMO_MS,
@@ -558,4 +662,4 @@ async def run_pool(tasks: List[Task], concurrency: int = 4, on_progress=None):
                 await context.close()
             except Exception:
                 pass
-            shutil.rmtree(TEMP_PROFILE_PATH, ignore_errors=True)
+            shutil.rmtree(temp_profile, ignore_errors=True)
