@@ -25,16 +25,18 @@ def strip_accents(s: str) -> str:
 BASE_DIR = Path(__file__).parent
 DOWNLOAD_DIR = BASE_DIR / "download"
 PENDING_DIR = BASE_DIR / "pending_posts"
-DAILY_LOG = BASE_DIR / "scraper_daily.json"
-LOGS_DIR = BASE_DIR / "logs"
-HISTORY_FILE           = BASE_DIR / "upload_history.json"
-MATCHING_MODE_FILE     = BASE_DIR / "matching_mode.json"
-MATCHING_REQUEST_FILE  = BASE_DIR / "matching_request.json"
-MATCHING_RESPONSE_FILE = BASE_DIR / "matching_response.json"
+STATE_DIR = BASE_DIR / "state"
+STATE_DIR.mkdir(parents=True, exist_ok=True)
+DAILY_LOG              = STATE_DIR / "scraper_daily.json"
+LOGS_DIR               = BASE_DIR / "logs"
+HISTORY_FILE           = STATE_DIR / "upload_history.json"
+MATCHING_MODE_FILE     = STATE_DIR / "matching_mode.json"
+MATCHING_REQUEST_FILE  = STATE_DIR / "matching_request.json"
+MATCHING_RESPONSE_FILE = STATE_DIR / "matching_response.json"
 GUI_CONFIG_FILE        = BASE_DIR / "config" / "gui_config.json"
 SCRAPER_CONFIG_FILE    = BASE_DIR / "config" / "scraper_config.json"
 ACCOUNTS_FILE          = BASE_DIR / "config" / "tiktok_accounts.json"
-PIPELINE_STATE_FILE    = BASE_DIR / "pipeline_state.json"
+PIPELINE_STATE_FILE    = STATE_DIR / "pipeline_state.json"
 VENV_PYTHON = BASE_DIR / "venv" / "Scripts" / "python.exe"
 PYTHON = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
 DEFAULT_DAILY_LIMIT = 5

@@ -145,13 +145,15 @@ RAW_VIDEO_PATH = os.getenv(
 
 # ── Matching IPC (GUI ↔ pipeline) ─────────────────────────────────────────────
 _base_path              = Path(BASE_DIR) if BASE_DIR else Path(__file__).parent
-MATCHING_MODE_FILE      = _base_path / "matching_mode.json"
-MATCHING_REQUEST_FILE   = _base_path / "matching_request.json"
-MATCHING_RESPONSE_FILE  = _base_path / "matching_response.json"
+_state_dir              = _base_path / "state"
+_state_dir.mkdir(parents=True, exist_ok=True)
+MATCHING_MODE_FILE      = _state_dir / "matching_mode.json"
+MATCHING_REQUEST_FILE   = _state_dir / "matching_request.json"
+MATCHING_RESPONSE_FILE  = _state_dir / "matching_response.json"
 MATCHING_TIMEOUT_S      = 65   # GUI timeout = 60s + 5s marge
 
 # ── Pipeline state (reprise après crash) ──────────────────────────────────────
-PIPELINE_STATE_FILE = str(_base_path / "pipeline_state.json")
+PIPELINE_STATE_FILE = str(_state_dir / "pipeline_state.json")
 
 RAW_AUDIO_DIR = os.path.join(BASE_DIR, "audio")
 AUDIO_SEGMENTS_DIR = os.path.join(BASE_DIR, "audio_segments")
@@ -456,14 +458,14 @@ def _parse_publish_id(stdout: str) -> str:
 
 def save_upload_entry(publish_id: str, ok: bool, reason: str):
     """Sauvegarde une entrée dans upload_history.json pour le suivi des stats."""
-    history_path = Path(BASE_DIR) / "upload_history.json"
+    history_path = _state_dir / "upload_history.json"
     try:
         history = json.loads(history_path.read_text(encoding="utf-8")) if history_path.exists() else []
     except Exception:
         history = []
 
     # Lire le template de prompt utilisé pour cette génération
-    meta_path = Path(BASE_DIR) / "current_generation_meta.json"
+    meta_path = _state_dir / "current_generation_meta.json"
     prompt_template = "(inconnu)"
     try:
         if meta_path.exists():
@@ -928,7 +930,7 @@ duplicated objects, impossible reflections
     prompt_path.write_text(final_prompt, encoding="utf-8")
 
     # Persistance du template choisi pour l'historique d'upload
-    meta_path = Path(BASE_DIR) / "current_generation_meta.json"
+    meta_path = _state_dir / "current_generation_meta.json"
     try:
         meta_path.write_text(
             json.dumps({"prompt_template": chosen_name}, ensure_ascii=False),

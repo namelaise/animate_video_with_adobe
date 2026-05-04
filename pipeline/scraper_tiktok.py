@@ -22,8 +22,10 @@ load_dotenv()
 
 BASE_DIR = Path(os.getenv("BASE_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 DOWNLOAD_DIR = BASE_DIR / "download"
-HISTORY_FILE = BASE_DIR / "scraper_history.json"
-DAILY_LOG_FILE = BASE_DIR / "scraper_daily.json"
+STATE_DIR = BASE_DIR / "state"
+STATE_DIR.mkdir(parents=True, exist_ok=True)
+HISTORY_FILE = STATE_DIR / "scraper_history.json"
+DAILY_LOG_FILE = STATE_DIR / "scraper_daily.json"
 SCRAPER_CONFIG_FILE = BASE_DIR / "config" / "scraper_config.json"
 
 LOG_DIR = BASE_DIR / "logs"

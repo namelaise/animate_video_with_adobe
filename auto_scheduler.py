@@ -226,7 +226,7 @@ def scrape_loop():
 
 
 def generation_loop():
-    _state_file = Path(BASE_DIR) / "pipeline_state.json"
+    _state_file = Path(BASE_DIR) / "state" / "pipeline_state.json"
     _retry_counts: dict = {}  # {video_name: nb_echecs}
 
     while True:

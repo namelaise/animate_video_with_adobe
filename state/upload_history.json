@@ -322,5 +322,29 @@
     "like_count": null,
     "comment_count": null,
     "share_count": null
+  },
+  {
+    "timestamp": "2026-04-30T11:12:03",
+    "publish_id": "v_inbox_file~v2.7634477064615970838",
+    "prompt_template": "8_comedique_amplifie.txt",
+    "upload_ok": true,
+    "reason": "ok",
+    "video_id": null,
+    "view_count": null,
+    "like_count": null,
+    "comment_count": null,
+    "share_count": null
+  },
+  {
+    "timestamp": "2026-05-04T11:51:42",
+    "publish_id": "v_inbox_file~v2.7635971191332964374",
+    "prompt_template": "10_chaleureux_viral.txt",
+    "upload_ok": true,
+    "reason": "ok",
+    "video_id": null,
+    "view_count": null,
+    "like_count": null,
+    "comment_count": null,
+    "share_count": null
   }
 ]

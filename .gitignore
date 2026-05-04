@@ -47,6 +47,11 @@ video_composite/
 archive/
 soundcloud-profile/
 
-# Scraper
-scraper_history.json
-scraper_daily.json
+# Fichiers d'état runtime (state/)
+state/scraper_history.json
+state/scraper_daily.json
+state/pipeline_state.json
+state/matching_mode.json
+state/matching_request.json
+state/matching_response.json
+state/current_generation_meta.json
