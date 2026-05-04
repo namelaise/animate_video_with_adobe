@@ -4,20 +4,17 @@ tqdm
 openai
 python-dotenv
 requests
-moviepy
 numpy
 pywin32
 wheel
 ffmpeg-python
 assemblyai
-selenium
-undetected-chromedriver
 playwright
-pyautogui
 tiktoken
 imageio
 imageio-ffmpeg
 yt-dlp
+flet
 
 # Remarque : ffmpeg doit être installé séparément (non pip)
 # Remarque : pour Playwright exécuter `python -m playwright install` après l'installation des paquets

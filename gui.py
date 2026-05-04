@@ -31,24 +31,35 @@ HISTORY_FILE           = BASE_DIR / "upload_history.json"
 MATCHING_MODE_FILE     = BASE_DIR / "matching_mode.json"
 MATCHING_REQUEST_FILE  = BASE_DIR / "matching_request.json"
 MATCHING_RESPONSE_FILE = BASE_DIR / "matching_response.json"
-GUI_CONFIG_FILE        = BASE_DIR / "gui_config.json"
+GUI_CONFIG_FILE        = BASE_DIR / "config" / "gui_config.json"
+SCRAPER_CONFIG_FILE    = BASE_DIR / "config" / "scraper_config.json"
 ACCOUNTS_FILE          = BASE_DIR / "config" / "tiktok_accounts.json"
 PIPELINE_STATE_FILE    = BASE_DIR / "pipeline_state.json"
 VENV_PYTHON = BASE_DIR / "venv" / "Scripts" / "python.exe"
 PYTHON = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
 DEFAULT_DAILY_LIMIT = 5
 
-# Couleurs
-SURFACE = "#1c1b1f"
-ON_SURFACE = "#e6e1e5"
-OUTLINE = "#938f99"
-PRIMARY = "#d0bcff"
-ON_PRIMARY = "#381e72"
-SECONDARY = "#ccc2dc"
-ERROR = "#f2b8b5"
-ERROR_C = "#f44336"
-SUCCESS = "#4caf50"
-WARN_C = "#ff9800"
+# Palette premium dark
+BG          = "#09090f"
+SURFACE     = "#0f0f17"
+SURFACE_HIGH= "#16161f"
+SURFACE_TOP = "#1d1d28"
+BORDER      = "rgba(255,255,255,0.07)"
+ACCENT      = "#7c3aed"
+ACCENT_DIM  = "rgba(124,58,237,0.12)"
+ON_SURFACE  = "#e2e8f0"
+OUTLINE     = "#475569"
+PRIMARY     = "#a78bfa"
+ON_PRIMARY  = "#1e1b4b"
+SECONDARY   = "#c4b5fd"
+ERROR       = "#fca5a5"
+ERROR_C     = "#ef4444"
+ERROR_DIM   = "rgba(239,68,68,0.08)"
+SUCCESS     = "#22c55e"
+SUCCESS_DIM = "rgba(34,197,94,0.08)"
+WARN_C      = "#f59e0b"
+WARN_DIM    = "rgba(245,158,11,0.08)"
+MUTED       = "#64748b"
 
 PIPELINE_STEPS = [
     ("En attente de video", "video choisie|copie .* download"),
@@ -70,19 +81,20 @@ def main(page: ft.Page):
     page.title = "Mr Martin"
     page.theme_mode = ft.ThemeMode.DARK
     page.theme = ft.Theme(
-        color_scheme_seed="#8b5cf6",
+        color_scheme_seed="#7c3aed",
         font_family="Segoe UI",
     )
     page.padding = 0
+    page.bgcolor = BG
     page.window.width = 1400
     page.window.height = 900
     page.window.min_width = 1000
     page.window.min_height = 700
 
     # Icon — .ico en priorité pour la barre des tâches Windows
-    ico = BASE_DIR / "app_icon.ico"
+    ico = BASE_DIR / "assets" / "app_icon.ico"
     if not ico.exists():
-        ico = BASE_DIR / "app_icon.png"
+        ico = BASE_DIR / "assets" / "app_icon.png"
     if ico.exists():
         page.window.icon = str(ico)
 
@@ -101,7 +113,7 @@ def main(page: ft.Page):
     snack_ref = {"bar": None}
 
     def toast(msg, kind="info"):
-        colors = {"success": SUCCESS, "error": ERROR_C, "warning": WARN_C, "info": "#8b5cf6"}
+        colors = {"success": SUCCESS, "error": ERROR_C, "warning": WARN_C, "info": ACCENT}
         icons_map = {"success": ft.Icons.CHECK_CIRCLE, "error": ft.Icons.ERROR,
                  "warning": ft.Icons.WARNING, "info": ft.Icons.INFO}
         sb = ft.SnackBar(
@@ -118,20 +130,28 @@ def main(page: ft.Page):
 
     # ── Metric cards ──────────────────────────────────────
     def metric_card(icon, title, value_ref, subtitle_ref=None):
-        val = ft.Text(value_ref, size=28, weight=ft.FontWeight.BOLD)
+        val = ft.Text(value_ref, size=32, weight=ft.FontWeight.BOLD, color=ON_SURFACE)
         sub = ft.Text(subtitle_ref or "", size=11, color=OUTLINE)
         card = ft.Container(
             content=ft.Column([
                 ft.Row([
-                    ft.Icon(icon, size=18, color=OUTLINE),
-                    ft.Text(title, size=12, color=OUTLINE),
-                ], spacing=8),
+                    ft.Container(
+                        content=ft.Icon(icon, size=16, color=PRIMARY),
+                        width=30, height=30,
+                        border_radius=8,
+                        bgcolor=ACCENT_DIM,
+                        alignment=ft.Alignment.CENTER,
+                    ),
+                    ft.Text(title, size=11, color=OUTLINE, weight=ft.FontWeight.W_500),
+                ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Container(height=8),
                 val,
                 sub,
-            ], spacing=4),
-            bgcolor=ft.Colors.SURFACE_CONTAINER,
-            border_radius=12,
+            ], spacing=2, tight=True),
+            bgcolor=SURFACE_HIGH,
+            border_radius=14,
             padding=ft.Padding.all(20),
+            border=ft.border.all(1, BORDER),
             expand=True,
         )
         return card, val, sub
@@ -145,13 +165,14 @@ def main(page: ft.Page):
 
     # ── Pipeline steps ────────────────────────────────────
     pipeline_badge = ft.Container(
-        content=ft.Text("En attente", size=11, weight=ft.FontWeight.BOLD, color=OUTLINE),
-        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-        border_radius=12,
-        padding=ft.Padding.symmetric(horizontal=12, vertical=4),
+        content=ft.Text("En attente", size=10, weight=ft.FontWeight.W_600, color=OUTLINE),
+        bgcolor=SURFACE_TOP,
+        border_radius=20,
+        padding=ft.Padding.symmetric(horizontal=10, vertical=4),
+        border=ft.border.all(1, BORDER),
     )
-    pipeline_progress = ft.ProgressBar(value=0, height=4, color="#8b5cf6",
-                                        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST)
+    pipeline_progress = ft.ProgressBar(value=0, height=4, color=ACCENT,
+                                        bgcolor=SURFACE_TOP)
 
     step_dots = []
     step_labels = []
@@ -159,12 +180,13 @@ def main(page: ft.Page):
     step_rows = []
 
     for i, (name, _) in enumerate(PIPELINE_STEPS):
-        dot = ft.Container(width=8, height=8, border_radius=4,
-                           bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST)
+        dot = ft.Container(width=10, height=10, border_radius=5,
+                           bgcolor=SURFACE_TOP,
+                           border=ft.border.all(2, BORDER))
         label = ft.Text(name, size=12, color=OUTLINE)
-        time_lbl = ft.Text("", size=11, color=OUTLINE)
+        time_lbl = ft.Text("", size=10, color=OUTLINE, font_family="Cascadia Code")
         row = ft.Row([dot, label, ft.Container(expand=True), time_lbl],
-                     spacing=10, height=26, key=f"step_{i}")
+                     spacing=10, height=28, key=f"step_{i}")
         step_dots.append(dot)
         step_labels.append(label)
         step_times.append(time_lbl)
@@ -179,10 +201,11 @@ def main(page: ft.Page):
 
     pipeline_card = ft.Container(
         content=pipeline_col,
-        bgcolor=ft.Colors.SURFACE_CONTAINER,
-        border_radius=12,
-        padding=20,
-        width=320,
+        bgcolor=SURFACE_HIGH,
+        border_radius=14,
+        padding=ft.Padding.all(20),
+        border=ft.border.all(1, BORDER),
+        width=300,
         expand=True,
     )
 
@@ -190,19 +213,22 @@ def main(page: ft.Page):
         if idx < 0 or idx >= len(PIPELINE_STEPS):
             return
         if status == "running":
-            step_dots[idx].bgcolor = "#8b5cf6"
-            step_labels[idx].color = "white"
-            step_labels[idx].weight = ft.FontWeight.BOLD
+            step_dots[idx].bgcolor = ACCENT
+            step_dots[idx].border = ft.border.all(2, PRIMARY)
+            step_labels[idx].color = PRIMARY
+            step_labels[idx].weight = ft.FontWeight.W_600
             pipeline_progress.value = (idx + 0.5) / len(PIPELINE_STEPS)
             pipeline_badge.content.value = PIPELINE_STEPS[idx][0]
-            pipeline_badge.content.color = "white"
-            pipeline_badge.bgcolor = "#8b5cf6"
+            pipeline_badge.content.color = PRIMARY
+            pipeline_badge.bgcolor = ACCENT_DIM
+            pipeline_badge.border = ft.border.all(1, ACCENT)
             try:
                 pipeline_col.scroll_to(key=f"step_{idx}", duration=200)
             except Exception:
                 pass
         elif status == "done":
             step_dots[idx].bgcolor = SUCCESS
+            step_dots[idx].border = ft.border.all(2, SUCCESS)
             step_labels[idx].color = SUCCESS
             step_labels[idx].weight = None
             if elapsed:
@@ -222,20 +248,23 @@ def main(page: ft.Page):
                     pass
         elif status == "error":
             step_dots[idx].bgcolor = ERROR_C
+            step_dots[idx].border = ft.border.all(2, ERROR_C)
             step_labels[idx].color = ERROR_C
             step_labels[idx].weight = ft.FontWeight.BOLD
             pipeline_badge.content.value = "Erreur"
-            pipeline_badge.content.color = "white"
-            pipeline_badge.bgcolor = ERROR_C
+            pipeline_badge.content.color = ERROR_C
+            pipeline_badge.bgcolor = ERROR_DIM
+            pipeline_badge.border = ft.border.all(1, ERROR_C)
 
     def reset_pipeline():
         for i in range(len(PIPELINE_STEPS)):
-            step_dots[i].bgcolor = ft.Colors.SURFACE_CONTAINER_HIGHEST
+            step_dots[i].bgcolor = SURFACE_TOP
+            step_dots[i].border = ft.border.all(2, BORDER)
             step_labels[i].color = OUTLINE
             step_labels[i].weight = None
             step_times[i].value = ""
         pipeline_progress.value = 0
-        pipeline_progress.color = "#8b5cf6"
+        pipeline_progress.color = ACCENT
         try:
             pipeline_col.scroll_to(offset=0, duration=300)
         except Exception:
@@ -246,16 +275,20 @@ def main(page: ft.Page):
         ) if DOWNLOAD_DIR.exists() else False
         if has_video:
             step_dots[0].bgcolor = SUCCESS
+            step_dots[0].border = ft.border.all(2, SUCCESS)
             step_labels[0].color = SUCCESS
             pipeline_badge.content.value = "Video disponible"
-            pipeline_badge.content.color = "white"
-            pipeline_badge.bgcolor = SUCCESS
+            pipeline_badge.content.color = SUCCESS
+            pipeline_badge.bgcolor = SUCCESS_DIM
+            pipeline_badge.border = ft.border.all(1, SUCCESS)
         else:
-            step_dots[0].bgcolor = WARN_C
-            step_labels[0].color = WARN_C
+            step_dots[0].bgcolor = SURFACE_TOP
+            step_dots[0].border = ft.border.all(2, BORDER)
+            step_labels[0].color = OUTLINE
             pipeline_badge.content.value = "En attente de video"
             pipeline_badge.content.color = OUTLINE
-            pipeline_badge.bgcolor = ft.Colors.SURFACE_CONTAINER_HIGHEST
+            pipeline_badge.bgcolor = SURFACE_TOP
+            pipeline_badge.border = ft.border.all(1, BORDER)
 
     pipeline_current = {"ref": -1}
 
@@ -289,8 +322,9 @@ def main(page: ft.Page):
             pipeline_progress.value = 1.0
             pipeline_progress.color = SUCCESS
             pipeline_badge.content.value = "Termine"
-            pipeline_badge.content.color = "white"
-            pipeline_badge.bgcolor = SUCCESS
+            pipeline_badge.content.color = SUCCESS
+            pipeline_badge.bgcolor = SUCCESS_DIM
+            pipeline_badge.border = ft.border.all(1, SUCCESS)
         elif "fin du cycle" in ll:
             reset_pipeline()
         elif "erreur non ger" in ll or ("echec" in ll and "etape" in ll):
@@ -314,51 +348,36 @@ def main(page: ft.Page):
             return None
         m = _LOG_LINE_RE.match(line)
         if not m:
-            # Ligne brute sans format structuré (subprocess, etc.)
             return ft.Container(
-                content=ft.Text(line[:400], size=11, color="#4a4a4a",
+                content=ft.Text(line[:400], size=10, color="#2d3748",
                                 font_family="Cascadia Code"),
-                padding=ft.Padding.symmetric(horizontal=10, vertical=1),
+                padding=ft.Padding.symmetric(horizontal=12, vertical=1),
             )
-        ts       = m.group(2)
-        level    = m.group(3)
-        module   = m.group(4)
-        msg      = m.group(5)
+        ts      = m.group(2)
+        level   = m.group(3)
+        module  = m.group(4)
+        msg     = m.group(5)
 
-        if level == "ERROR":
-            level_color, row_bg, msg_color = "#f44336", "#1c0a0a", "#ffcdd2"
-        elif level == "WARNING":
-            level_color, row_bg, msg_color = "#ff9800", "#1c1200", "#ffe0b2"
-        elif level == "DEBUG":
-            level_color, row_bg, msg_color = "#8b5cf6", None, "#c5b4f0"
-        else:
-            level_color, row_bg, msg_color = "#4caf50", None, "#e0e0e0"
-
-        mod_colors = {"pipeline": "#8b5cf6", "scheduler": "#2196f3", "scraper": "#00bcd4"}
-        mod_color = mod_colors.get(module, "#607d8b")
+        level_color = {"ERROR": ERROR_C, "WARNING": WARN_C, "DEBUG": PRIMARY, "INFO": "#22c55e"}[level]
+        left_color  = {"ERROR": ERROR_C, "WARNING": WARN_C, "DEBUG": ACCENT, "INFO": SURFACE_TOP}[level]
+        msg_color   = {"ERROR": "#fca5a5", "WARNING": "#fde68a", "DEBUG": "#c4b5fd", "INFO": ON_SURFACE}[level]
+        mod_colors  = {"pipeline": PRIMARY, "scheduler": "#38bdf8", "scraper": "#34d399"}
+        mod_color   = mod_colors.get(module, OUTLINE)
 
         return ft.Container(
             content=ft.Row([
-                ft.Text(ts, size=10, color="#4a4a4a", font_family="Cascadia Code", width=65),
+                ft.Container(width=3, bgcolor=level_color, border_radius=ft.border_radius.only(top_left=2, bottom_left=2)),
+                ft.Text(ts, size=10, color=MUTED, font_family="Cascadia Code", width=62, no_wrap=True),
                 ft.Container(
-                    content=ft.Text(level[:4], size=9, weight=ft.FontWeight.BOLD, color=level_color),
-                    border=ft.Border.all(1, level_color),
-                    border_radius=3,
-                    padding=ft.Padding.symmetric(horizontal=4, vertical=1),
-                    width=38,
+                    content=ft.Text(module[:8], size=9, color=mod_color, weight=ft.FontWeight.W_600),
+                    width=66,
                 ),
-                ft.Container(
-                    content=ft.Text(module[:9], size=9, color=mod_color),
-                    border=ft.Border.all(1, mod_color),
-                    border_radius=3,
-                    padding=ft.Padding.symmetric(horizontal=4, vertical=1),
-                    width=74,
-                ),
-                ft.Text(msg, size=11, color=msg_color, expand=True),
-            ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            bgcolor=row_bg,
-            padding=ft.Padding.symmetric(horizontal=8, vertical=3),
-            border_radius=3,
+                ft.Text(msg, size=11, color=msg_color, expand=True, overflow=ft.TextOverflow.ELLIPSIS, no_wrap=True),
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            bgcolor={"ERROR": ERROR_DIM, "WARNING": WARN_DIM}.get(level),
+            border_radius=4,
+            padding=ft.Padding.only(top=3, bottom=3, right=10),
+            height=26,
         )
 
 
@@ -399,10 +418,7 @@ def main(page: ft.Page):
             log_list.controls = log_list.controls[-MAX_LOG_ENTRIES:]
         if added:
             _set_placeholder(False)
-            try:
-                log_list.scroll_to(offset=float("inf"), duration=100)
-            except Exception:
-                pass
+        return added
 
     def _start_action_log(action_name: str):
         """Bascule le panel de log vers une action manuelle."""
@@ -410,12 +426,12 @@ def main(page: ft.Page):
         log_list.controls.clear()
         log_list.controls.append(ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.TERMINAL, size=14, color="#8b5cf6"),
+                ft.Icon(ft.Icons.TERMINAL, size=14, color=ACCENT),
                 ft.Text(f"▶  {action_name}", size=12,
-                        weight=ft.FontWeight.BOLD, color="#8b5cf6"),
+                        weight=ft.FontWeight.BOLD, color=PRIMARY),
             ], spacing=8),
             padding=ft.Padding.symmetric(horizontal=10, vertical=6),
-            bgcolor="#1a1040", border_radius=4,
+            bgcolor=ACCENT_DIM, border_radius=4,
         ))
         _set_placeholder(False)
         page.update()
@@ -458,37 +474,50 @@ def main(page: ft.Page):
     logs_panel = ft.Container(
         content=ft.Column([
             ft.Row([
-                ft.Text("Logs", size=16, weight=ft.FontWeight.BOLD),
+                ft.Container(
+                    content=ft.Icon(ft.Icons.TERMINAL, size=14, color=OUTLINE),
+                    width=26, height=26, border_radius=6,
+                    bgcolor="rgba(255,255,255,0.04)",
+                    alignment=ft.Alignment.CENTER,
+                ),
+                ft.Text("Logs", size=14, weight=ft.FontWeight.W_600, color=ON_SURFACE),
                 ft.Container(expand=True),
-                ft.Text("pipeline en cours", size=11, color=OUTLINE),
-            ], spacing=8),
+                ft.Text("pipeline en cours", size=10, color=OUTLINE),
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ft.Container(height=8),
             log_area,
-        ], spacing=8, expand=True),
-        bgcolor=ft.Colors.SURFACE_CONTAINER,
-        border_radius=12,
-        padding=ft.Padding.only(left=16, right=16, top=12, bottom=16),
+        ], spacing=0, expand=True),
+        bgcolor=SURFACE_HIGH,
+        border_radius=14,
+        padding=ft.Padding.all(16),
+        border=ft.border.all(1, BORDER),
         expand=True,
     )
 
     # ── Upload progress bar ───────────────────────────────
-    upload_bar_text = ft.Text("", size=12, color="white")
-    upload_bar_pct = ft.Text("0%", size=12, weight=ft.FontWeight.BOLD, color="#8b5cf6")
-    upload_bar_progress = ft.ProgressBar(value=0, height=6, color="#8b5cf6",
-                                          bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST)
+    upload_bar_text = ft.Text("", size=12, color=ON_SURFACE)
+    upload_bar_pct = ft.Text("0%", size=12, weight=ft.FontWeight.BOLD, color=PRIMARY)
+    upload_bar_progress = ft.ProgressBar(value=0, height=6, color=ACCENT,
+                                          bgcolor=SURFACE_TOP)
     upload_bar = ft.Container(
         content=ft.Column([
             ft.Row([
-                ft.Icon(ft.Icons.CLOUD_UPLOAD, color="#8b5cf6", size=20),
+                ft.Container(
+                    content=ft.Icon(ft.Icons.CLOUD_UPLOAD, color=PRIMARY, size=16),
+                    width=28, height=28, border_radius=7,
+                    bgcolor=ACCENT_DIM, alignment=ft.Alignment.CENTER,
+                ),
                 upload_bar_text,
                 ft.Container(expand=True),
                 upload_bar_pct,
             ], spacing=10),
+            ft.Container(height=8),
             upload_bar_progress,
-        ], spacing=8),
-        bgcolor=ft.Colors.SURFACE_CONTAINER,
+        ], spacing=0),
+        bgcolor=SURFACE_HIGH,
         border_radius=12,
         padding=ft.Padding.all(16),
-        border=ft.Border.all(1, "#8b5cf6"),
+        border=ft.border.all(1, "rgba(124,58,237,0.35)"),
         visible=False,
     )
 
@@ -497,16 +526,19 @@ def main(page: ft.Page):
     pending_section = ft.Container(
         content=ft.Column([
             ft.Row([
-                ft.Text("Videos en echec", size=16, weight=ft.FontWeight.BOLD),
+                ft.Icon(ft.Icons.ERROR_OUTLINE, size=16, color=WARN_C),
+                ft.Text("Vidéos en échec", size=14, weight=ft.FontWeight.W_600, color=ON_SURFACE),
                 ft.Container(expand=True),
-                ft.FilledTonalButton("Poster la selection", icon=ft.Icons.SEND,
-                                      on_click=lambda _: post_selected()),
+                ft.FilledTonalButton("Poster la sélection", icon=ft.Icons.SEND,
+                                      on_click=lambda _: post_selected(),
+                                      style=ft.ButtonStyle(bgcolor=ACCENT_DIM, color=PRIMARY)),
             ]),
             pending_row,
         ], spacing=10),
-        bgcolor=ft.Colors.SURFACE_CONTAINER,
-        border_radius=12,
+        bgcolor=SURFACE_HIGH,
+        border_radius=14,
         padding=16,
+        border=ft.border.all(1, "rgba(245,158,11,0.2)"),
         visible=False,
     )
 
@@ -572,7 +604,7 @@ def main(page: ft.Page):
                     size=28, color=OUTLINE,
                 ),
                 width=140, height=78,
-                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                bgcolor=SURFACE_TOP,
                 border_radius=8,
                 alignment=ft.Alignment.CENTER,
             )
@@ -618,7 +650,7 @@ def main(page: ft.Page):
                 ft.Row([
                     ft.Container(
                         content=ft.Text(reason_text, size=10, color=reason_color),
-                        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                        bgcolor=SURFACE_TOP,
                         border_radius=4,
                         padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                     ),
@@ -630,17 +662,17 @@ def main(page: ft.Page):
                         "▶ Lire",
                         on_click=on_play,
                         style=ft.ButtonStyle(
-                            color="#8b5cf6",
+                            color=PRIMARY,
                             padding=ft.Padding.symmetric(horizontal=0, vertical=0),
                         ),
                     ) if has_video else ft.Container(),
                 ]),
             ], spacing=4, horizontal_alignment=ft.CrossAxisAlignment.START),
             width=160,
-            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH if is_selected else ft.Colors.SURFACE_CONTAINER,
-            border_radius=10,
-            padding=10,
-            border=ft.Border.all(2, "#8b5cf6") if is_selected else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+            bgcolor=SURFACE_TOP if is_selected else SURFACE_HIGH,
+            border_radius=12,
+            padding=12,
+            border=ft.border.all(2, PRIMARY) if is_selected else ft.border.all(1, BORDER),
             on_click=on_select,
             ink=True,
         )
@@ -728,7 +760,7 @@ def main(page: ft.Page):
         upload_bar_text.value = f"Upload {vdir.name}..."
         upload_bar_pct.value = "0%"
         upload_bar_progress.value = 0
-        upload_bar_progress.color = "#8b5cf6"
+        upload_bar_progress.color = ACCENT
         page.update()
 
         def do():
@@ -740,7 +772,7 @@ def main(page: ft.Page):
                     if _a.get("id") == _active_id:
                         _active_tok = (_a.get("access_token") or "").strip()
                         break
-            _post_cmd = [PYTHON, "-u", "post_tiktok_inbox.py", "--video", str(vp), "--poll"]
+            _post_cmd = [PYTHON, "-u", str(BASE_DIR / "pipeline" / "post_tiktok_inbox.py"), "--video", str(vp), "--poll"]
             if _active_tok:
                 _post_cmd += ["--token", _active_tok]
             proc = subprocess.Popen(
@@ -972,38 +1004,386 @@ def main(page: ft.Page):
             page.run_thread(lambda: (_end_action_log(success, msg), toast(msg, kind)))
         threading.Thread(target=do, daemon=True).start()
 
-    def show_stats(e=None):
-        toast("Chargement des stats...", "info")
-        def do():
-            r = subprocess.run(
-                [PYTHON, "fetch_stats.py", "--report"],
-                cwd=str(BASE_DIR), capture_output=True, text=True,
-                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
-            )
-            output = (r.stdout or r.stderr or "Aucune donnée disponible.").strip()
+    # ── Scraper config ────────────────────────────────────────
+    def _load_scraper_config() -> dict:
+        default = {
+            "accounts": [],
+            "daily_limit": 5,
+            "min_duration": 10,
+            "max_duration": 600,
+        }
+        try:
+            if SCRAPER_CONFIG_FILE.exists():
+                data = json.loads(SCRAPER_CONFIG_FILE.read_text(encoding="utf-8"))
+                default.update(data)
+        except Exception:
+            pass
+        return default
 
-            def show():
-                dlg = ft.AlertDialog(
-                    title=ft.Text("Stats TikTok", size=16, weight=ft.FontWeight.BOLD),
-                    content=ft.Container(
-                        content=ft.ListView(
-                            controls=[
-                                ft.Text(output, size=11, font_family="Cascadia Code",
-                                        selectable=True, color=ON_SURFACE),
-                            ],
-                            expand=True,
-                        ),
-                        width=640, height=420,
-                        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-                        border_radius=8,
-                        padding=12,
-                    ),
-                    actions=[ft.TextButton("Fermer", on_click=lambda ev: _close_dialog(dlg))],
-                    actions_alignment=ft.MainAxisAlignment.END,
+    def _save_scraper_config(cfg: dict):
+        import tempfile
+        dir_ = SCRAPER_CONFIG_FILE.parent
+        fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, SCRAPER_CONFIG_FILE)
+        except Exception as ex:
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
+            toast(f"Erreur sauvegarde config: {ex}", "error")
+
+    def show_scraper_config(e=None):
+        cfg = _load_scraper_config()
+        accounts_list = list(cfg.get("accounts", []))
+
+        accounts_field = ft.ListView(spacing=4, height=180)
+        limit_val = {"ref": int(cfg.get("daily_limit", 5))}
+        min_dur_val = {"ref": int(cfg.get("min_duration", 10))}
+        max_dur_val = {"ref": int(cfg.get("max_duration", 600))}
+
+        limit_lbl = ft.Text(str(limit_val["ref"]), size=14, weight=ft.FontWeight.BOLD,
+                            color="white", width=28, text_align=ft.TextAlign.CENTER)
+        min_dur_lbl = ft.Text(str(min_dur_val["ref"]), size=13, color="white", width=36,
+                              text_align=ft.TextAlign.CENTER)
+        max_dur_lbl = ft.Text(str(max_dur_val["ref"]), size=13, color="white", width=36,
+                              text_align=ft.TextAlign.CENTER)
+
+        def rebuild_list():
+            accounts_field.controls.clear()
+            for i, url in enumerate(accounts_list):
+                idx = i
+
+                def make_remove(j=idx):
+                    def do(e):
+                        accounts_list.pop(j)
+                        rebuild_list()
+                        page.update()
+                    return do
+
+                accounts_field.controls.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Text(url, size=11, expand=True, color=ON_SURFACE,
+                                    overflow=ft.TextOverflow.ELLIPSIS, no_wrap=True),
+                            ft.IconButton(ft.Icons.CLOSE, icon_size=14, icon_color=OUTLINE,
+                                          on_click=make_remove(i),
+                                          style=ft.ButtonStyle(padding=ft.Padding.all(0))),
+                        ], spacing=6),
+                        bgcolor=SURFACE_TOP,
+                        border_radius=6,
+                        padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+                    )
                 )
-                _open_dialog(dlg)
-            page.run_thread(show)
-        threading.Thread(target=do, daemon=True).start()
+
+        rebuild_list()
+
+        new_url_field = ft.TextField(
+            hint_text="https://www.tiktok.com/@compte",
+            text_size=12,
+            height=40,
+            content_padding=ft.Padding.symmetric(horizontal=10, vertical=8),
+            bgcolor=SURFACE_TOP,
+            border_color=BORDER,
+            focused_border_color=ACCENT,
+        )
+
+        def add_account(e):
+            url = (new_url_field.value or "").strip()
+            if url and url not in accounts_list:
+                accounts_list.append(url)
+                new_url_field.value = ""
+                rebuild_list()
+                page.update()
+
+        def make_stepper_row(label, val_holder, lbl_widget, step, min_v, max_v):
+            def dec(e):
+                val_holder["ref"] = max(min_v, val_holder["ref"] - step)
+                lbl_widget.value = str(val_holder["ref"])
+                page.update()
+            def inc(e):
+                val_holder["ref"] = min(max_v, val_holder["ref"] + step)
+                lbl_widget.value = str(val_holder["ref"])
+                page.update()
+            return ft.Row([
+                ft.Text(label, size=12, color=OUTLINE, expand=True),
+                ft.IconButton(ft.Icons.REMOVE, icon_size=16, on_click=dec,
+                              style=ft.ButtonStyle(padding=ft.Padding.all(0))),
+                ft.Container(content=lbl_widget,
+                             bgcolor=SURFACE_TOP,
+                             border_radius=6,
+                             padding=ft.Padding.symmetric(horizontal=6, vertical=2)),
+                ft.IconButton(ft.Icons.ADD, icon_size=16, on_click=inc,
+                              style=ft.ButtonStyle(padding=ft.Padding.all(0))),
+            ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+
+        def save_and_close(e):
+            new_cfg = {
+                "accounts": accounts_list,
+                "daily_limit": limit_val["ref"],
+                "min_duration": min_dur_val["ref"],
+                "max_duration": max_dur_val["ref"],
+            }
+            _save_scraper_config(new_cfg)
+            _close_dialog(dlg)
+            toast("Configuration scraping sauvegardée", "success")
+
+        dlg = ft.AlertDialog(
+            title=ft.Row([
+                ft.Icon(ft.Icons.MANAGE_SEARCH, color=ACCENT, size=20),
+                ft.Text("Configuration du scraping", size=14, weight=ft.FontWeight.BOLD),
+            ], spacing=10),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Comptes TikTok à scraper", size=12,
+                            weight=ft.FontWeight.BOLD, color=ON_SURFACE),
+                    accounts_field,
+                    ft.Row([
+                        new_url_field,
+                        ft.FilledTonalButton("Ajouter", icon=ft.Icons.ADD,
+                                             on_click=add_account),
+                    ], spacing=8),
+                    ft.Divider(height=12, color=BORDER),
+                    make_stepper_row("Vidéos / jour", limit_val, limit_lbl, 1, 1, 20),
+                    make_stepper_row("Durée min (s)", min_dur_val, min_dur_lbl, 5, 5, 120),
+                    make_stepper_row("Durée max (s)", max_dur_val, max_dur_lbl, 30, 30, 3600),
+                ], spacing=10, tight=True),
+                width=520,
+                padding=ft.Padding.only(top=4, bottom=8),
+            ),
+            actions=[
+                ft.TextButton("Annuler", on_click=lambda e: _close_dialog(dlg)),
+                ft.FilledButton("Enregistrer",
+                                on_click=save_and_close,
+                                style=ft.ButtonStyle(bgcolor=ACCENT, color="white")),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        _open_dialog(dlg)
+
+    def show_stats(e=None):
+        if not HISTORY_FILE.exists():
+            toast("Aucun historique d'upload trouvé", "warning")
+            return
+        try:
+            history = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            toast("Erreur lecture historique", "error")
+            return
+
+        from collections import defaultdict
+        import datetime as _dt
+
+        today = _dt.date.today()
+
+        # ── Métriques ────────────────────────────────────────────────────────
+        ok_entries   = [e for e in history if e.get("upload_ok")]
+        fail_entries = [e for e in history if not e.get("upload_ok")]
+        total        = len(history)
+        total_ok     = len(ok_entries)
+        pct_ok       = int(total_ok / total * 100) if total else 0
+        with_stats   = [e for e in ok_entries if e.get("view_count") is not None]
+        total_views  = sum(e.get("view_count") or 0 for e in with_stats)
+        active_days  = len({e["timestamp"][:10] for e in ok_entries if e.get("timestamp")})
+
+        # Uploads par jour — 30 derniers jours
+        days_range = [today - _dt.timedelta(days=i) for i in range(29, -1, -1)]
+        by_day: dict = defaultdict(int)
+        for e in ok_entries:
+            by_day[e.get("timestamp", "")[:10]] += 1
+        day_counts = [by_day[d.isoformat()] for d in days_range]
+        max_day    = max(day_counts, default=1) or 1
+
+        # Par template
+        by_template: dict = defaultdict(int)
+        for e in ok_entries:
+            tmpl = (e.get("prompt_template") or "(inconnu)").replace(".txt", "")
+            by_template[tmpl] += 1
+        sorted_templates = sorted(by_template.items(), key=lambda x: x[1], reverse=True)
+        max_tmpl = sorted_templates[0][1] if sorted_templates else 1
+
+        # ── KPI cards ────────────────────────────────────────────────────────
+        def _kpi(icon, label, value, color=PRIMARY, sub=None):
+            return ft.Container(
+                content=ft.Column([
+                    ft.Row([ft.Icon(icon, size=13, color=color),
+                            ft.Text(label, size=9, color=MUTED)], spacing=5),
+                    ft.Text(str(value), size=22, weight=ft.FontWeight.BOLD, color=color),
+                    ft.Text(sub, size=9, color=OUTLINE) if sub else ft.Container(height=2),
+                ], spacing=3, tight=True),
+                bgcolor=SURFACE_HIGH, border=ft.Border.all(1, BORDER),
+                border_radius=10, padding=12, expand=True,
+            )
+
+        kpi_row = ft.Row([
+            _kpi(ft.Icons.UPLOAD_FILE, "UPLOADS", total_ok, PRIMARY,
+                 f"{len(fail_entries)} échec(s)"),
+            _kpi(ft.Icons.VERIFIED, "SUCCÈS", f"{pct_ok}%", SUCCESS),
+            _kpi(ft.Icons.CALENDAR_MONTH, "JOURS ACTIFS", active_days, ACCENT),
+            _kpi(ft.Icons.VISIBILITY_OUTLINED, "VUES TOTALES",
+                 f"{total_views:,}" if with_stats else "—", WARN_C,
+                 f"{len(with_stats)} vidéos trackées" if with_stats else "stats en attente"),
+        ], spacing=8)
+
+        # ── Activity bar chart ────────────────────────────────────────────────
+        BAR_H, BAR_W = 44, 17
+        bars = []
+        for d, cnt in zip(days_range, day_counts):
+            h     = max(3, int(cnt / max_day * BAR_H)) if cnt else 3
+            color = ACCENT if d == today else (PRIMARY if cnt > 0 else SURFACE_TOP)
+            bars.append(ft.Column([
+                ft.Container(
+                    width=BAR_W, height=h, bgcolor=color,
+                    border_radius=3,
+                    tooltip=f"{d.strftime('%d %b')}: {cnt}",
+                ),
+            ], alignment=ft.MainAxisAlignment.END,
+               horizontal_alignment=ft.CrossAxisAlignment.CENTER))
+
+        def _dlabel(d):
+            return ft.Text(d.strftime("%d/%m"), size=8, color=OUTLINE)
+
+        activity_section = ft.Column([
+            ft.Row([
+                ft.Text("ACTIVITÉ — 30 DERNIERS JOURS",
+                        size=9, weight=ft.FontWeight.BOLD, color=MUTED),
+                ft.Container(expand=True),
+                ft.Text(f"max {max_day}/j", size=9, color=OUTLINE),
+            ]),
+            ft.Container(content=ft.Row(bars, spacing=2), height=BAR_H + 4),
+            ft.Row([_dlabel(days_range[0]), ft.Container(expand=True),
+                    _dlabel(days_range[14]),  ft.Container(expand=True),
+                    _dlabel(days_range[-1])]),
+        ], spacing=4)
+
+        # ── Template bars ─────────────────────────────────────────────────────
+        tmpl_items = []
+        for tmpl, cnt in sorted_templates[:7]:
+            fill = int(cnt / max_tmpl * 270)
+            tmpl_items.append(ft.Column([
+                ft.Row([
+                    ft.Text(tmpl[:26], size=10, color=ON_SURFACE, expand=True),
+                    ft.Text(str(cnt), size=10, color=PRIMARY,
+                            weight=ft.FontWeight.BOLD, width=20,
+                            text_align=ft.TextAlign.RIGHT),
+                ]),
+                ft.Row([
+                    ft.Container(width=fill, height=4, bgcolor=ACCENT, border_radius=2),
+                    ft.Container(width=270 - fill, height=4,
+                                 bgcolor=SURFACE_TOP, border_radius=2),
+                ], spacing=0),
+            ], spacing=3, tight=True))
+
+        prompt_col = ft.Column([
+            ft.Text("PROMPTS UTILISÉS", size=9, weight=ft.FontWeight.BOLD, color=MUTED),
+            ft.Container(height=2),
+            *tmpl_items,
+        ], spacing=8)
+
+        # ── Top vidéos ────────────────────────────────────────────────────────
+        if with_stats:
+            top = sorted(with_stats,
+                         key=lambda e: e.get("view_count") or 0, reverse=True)[:5]
+            vid_items = []
+            for i, e in enumerate(top, 1):
+                tmpl  = (e.get("prompt_template") or "?").replace(".txt", "")[:18]
+                views = e.get("view_count") or 0
+                likes = e.get("like_count") or 0
+                vid_items.append(ft.Container(
+                    content=ft.Row([
+                        ft.Text(f"#{i}", size=10, color=MUTED, width=18),
+                        ft.Text(e.get("timestamp", "")[:10], size=9,
+                                color=OUTLINE, width=72, font_family="Cascadia Code"),
+                        ft.Text(tmpl, size=10, color=ON_SURFACE, expand=True),
+                        ft.Text(f"{views:,}", size=10, color=PRIMARY),
+                        ft.Text(f"♥ {likes:,}", size=9, color=ERROR_C),
+                    ], spacing=6),
+                    bgcolor=SURFACE_HIGH, border_radius=6,
+                    padding=ft.Padding.symmetric(horizontal=8, vertical=6),
+                ))
+            video_col = ft.Column([
+                ft.Text("TOP 5 VIDÉOS", size=9,
+                        weight=ft.FontWeight.BOLD, color=MUTED),
+                ft.Container(height=2),
+                *vid_items,
+            ], spacing=5)
+        else:
+            video_col = ft.Column([
+                ft.Text("TOP VIDÉOS", size=9,
+                        weight=ft.FontWeight.BOLD, color=MUTED),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.Icons.HOURGLASS_EMPTY, size=28, color=OUTLINE),
+                        ft.Text("Stats TikTok non disponibles.",
+                                size=11, color=OUTLINE,
+                                text_align=ft.TextAlign.CENTER),
+                        ft.Text(
+                            "Publie les vidéos depuis la boîte TikTok\n"
+                            "puis clique Actualiser.",
+                            size=10, color=MUTED, text_align=ft.TextAlign.CENTER,
+                        ),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6),
+                    alignment=ft.Alignment.CENTER,
+                    bgcolor=SURFACE_HIGH, border_radius=10,
+                    padding=20,
+                ),
+            ], spacing=8)
+
+        # ── Dialog ───────────────────────────────────────────────────────────
+        dlg_ref = {"v": None}
+
+        def on_refresh(ev):
+            if dlg_ref["v"]:
+                _close_dialog(dlg_ref["v"])
+            toast("Actualisation des stats...", "info")
+            def do():
+                subprocess.run(
+                    [PYTHON, str(BASE_DIR / "tiktok" / "fetch_stats.py"), "--update-only"],
+                    cwd=str(BASE_DIR), capture_output=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+                )
+                page.run_thread(show_stats)
+            threading.Thread(target=do, daemon=True).start()
+
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Row([
+                ft.Icon(ft.Icons.BAR_CHART, color=PRIMARY, size=20),
+                ft.Text("Dashboard TikTok", size=15,
+                        weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(
+                    ft.Icons.REFRESH, icon_color=MUTED, icon_size=18,
+                    tooltip="Actualiser les stats depuis TikTok",
+                    on_click=on_refresh,
+                ),
+            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            content=ft.Container(
+                content=ft.Column([
+                    kpi_row,
+                    ft.Divider(height=1, color=BORDER),
+                    activity_section,
+                    ft.Divider(height=1, color=BORDER),
+                    ft.Row([
+                        ft.Container(content=prompt_col, width=300),
+                        ft.Container(width=1, bgcolor=BORDER),
+                        ft.Container(content=video_col, expand=True,
+                                     padding=ft.Padding.only(left=16)),
+                    ], spacing=0,
+                       vertical_alignment=ft.CrossAxisAlignment.START),
+                ], spacing=14, scroll=ft.ScrollMode.AUTO),
+                width=720, height=520,
+                padding=ft.Padding.symmetric(vertical=4),
+            ),
+            actions=[
+                ft.TextButton("Fermer", on_click=lambda ev: _close_dialog(dlg)),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+            bgcolor=SURFACE,
+        )
+        dlg_ref["v"] = dlg
+        _open_dialog(dlg)
 
     def show_upload_history(e=None):
         if not HISTORY_FILE.exists():
@@ -1034,7 +1414,7 @@ def main(page: ft.Page):
                 ], spacing=10),
                 padding=ft.Padding.symmetric(horizontal=10, vertical=5),
                 border_radius=6,
-                bgcolor=ft.Colors.SURFACE_CONTAINER,
+                bgcolor=SURFACE_HIGH,
             ))
 
         if not rows:
@@ -1060,14 +1440,20 @@ def main(page: ft.Page):
         sched_sub.value = "Pipeline actif" if on else "Arrete"
         # Bouton Démarrer : vert quand dispo, grisé quand actif
         start_btn.style = ft.ButtonStyle(
-            bgcolor="#4a4a4a" if on else SUCCESS,
-            color="#888888"   if on else "white",
+            bgcolor="rgba(255,255,255,0.05)" if on else SUCCESS,
+            color=OUTLINE if on else "white",
+            shape=ft.RoundedRectangleBorder(radius=8),
+            elevation=0,
+            padding=ft.Padding.symmetric(horizontal=14, vertical=10),
         )
         start_btn.disabled = on
         # Bouton Arrêter : rouge quand actif, grisé quand dispo
         stop_btn.style = ft.ButtonStyle(
-            bgcolor=ERROR_C   if on else "#4a4a4a",
-            color="white"     if on else "#888888",
+            bgcolor=ERROR_C if on else "rgba(255,255,255,0.05)",
+            color="white" if on else OUTLINE,
+            shape=ft.RoundedRectangleBorder(radius=8),
+            elevation=0,
+            padding=ft.Padding.symmetric(horizontal=14, vertical=10),
         )
         stop_btn.disabled = not on
 
@@ -1271,16 +1657,16 @@ def main(page: ft.Page):
                 width=44, height=44,
                 border_radius=22,
                 clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
-                border=ft.Border.all(2, "#d0bcff") if is_active else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                border=ft.Border.all(2, PRIMARY) if is_active else ft.Border.all(1, BORDER),
             )
         else:
             avatar_widget = ft.Container(
                 content=ft.Icon(ft.Icons.ACCOUNT_CIRCLE, size=22,
-                                color="#d0bcff" if is_active else OUTLINE),
+                                color=PRIMARY if is_active else OUTLINE),
                 width=44, height=44,
                 border_radius=22,
-                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-                border=ft.Border.all(2, "#d0bcff") if is_active else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                bgcolor=SURFACE_TOP,
+                border=ft.Border.all(2, PRIMARY) if is_active else ft.Border.all(1, BORDER),
                 alignment=ft.Alignment.CENTER,
             )
 
@@ -1328,10 +1714,10 @@ def main(page: ft.Page):
 
         active_badge = ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.CHECK_CIRCLE, size=10, color="#d0bcff"),
-                ft.Text("actif", size=9, color="#d0bcff"),
+                ft.Icon(ft.Icons.CHECK_CIRCLE, size=10, color=PRIMARY),
+                ft.Text("actif", size=9, color=PRIMARY),
             ], spacing=2),
-            bgcolor="#2d2148",
+            bgcolor=ACCENT_DIM,
             border_radius=6,
             padding=ft.Padding.symmetric(horizontal=4, vertical=1),
             visible=is_active,
@@ -1420,10 +1806,10 @@ def main(page: ft.Page):
                     tooltip="Supprimer ce compte",
                 ),
             ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH if is_active else ft.Colors.SURFACE_CONTAINER,
+            bgcolor=SURFACE_TOP if is_active else SURFACE_HIGH,
             border_radius=8,
             padding=ft.Padding.symmetric(horizontal=10, vertical=8),
-            border=ft.Border.all(1, "#d0bcff") if is_active else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+            border=ft.Border.all(1, PRIMARY) if is_active else ft.Border.all(1, BORDER),
             on_click=on_switch,
             ink=True,
             tooltip=profile_error or None,
@@ -1436,7 +1822,7 @@ def main(page: ft.Page):
         def do():
             page.run_thread(lambda: _start_action_log("Connexion nouveau compte TikTok"))
             proc = subprocess.Popen(
-                [PYTHON, "auth_tiktok_token_manager.py"], cwd=str(BASE_DIR),
+                [PYTHON, str(BASE_DIR / "tiktok" / "auth_tiktok_token_manager.py")], cwd=str(BASE_DIR),
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, bufsize=1, creationflags=_no_win,
             )
@@ -1487,7 +1873,7 @@ def main(page: ft.Page):
         def do():
             page.run_thread(lambda: _start_action_log(f"Refresh token ({account_arg})"))
             proc = subprocess.Popen(
-                [PYTHON, "auth_tiktok_refresh.py", "--account", account_arg],
+                [PYTHON, str(BASE_DIR / "tiktok" / "auth_tiktok_refresh.py"), "--account", account_arg],
                 cwd=str(BASE_DIR),
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, bufsize=1, creationflags=_no_win,
@@ -1503,7 +1889,7 @@ def main(page: ft.Page):
                 page.run_thread(lambda: _append_log_lines(
                     ["[INFO] Refresh échoué — ouverture navigateur pour re-auth..."]))
                 proc2 = subprocess.Popen(
-                    [PYTHON, "auth_tiktok_token_manager.py"], cwd=str(BASE_DIR),
+                    [PYTHON, str(BASE_DIR / "tiktok" / "auth_tiktok_token_manager.py")], cwd=str(BASE_DIR),
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, bufsize=1, creationflags=_no_win,
                 )
@@ -1550,7 +1936,7 @@ def main(page: ft.Page):
         "Mode auto",
         icon=ft.Icons.SMART_TOY,
         style=ft.ButtonStyle(
-            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+            bgcolor=SURFACE_TOP,
             color=OUTLINE,
         ),
     )
@@ -1567,12 +1953,12 @@ def main(page: ft.Page):
         if matching_mode["ref"] == "manual":
             matching_mode_btn.text = "Matching manuel"
             matching_mode_btn.icon = ft.Icons.PERSON_SEARCH
-            matching_mode_btn.style = ft.ButtonStyle(bgcolor="#1a1040", color="#8b5cf6")
+            matching_mode_btn.style = ft.ButtonStyle(bgcolor=ACCENT_DIM, color=PRIMARY)
         else:
             matching_mode_btn.text = "Mode auto"
             matching_mode_btn.icon = ft.Icons.SMART_TOY
             matching_mode_btn.style = ft.ButtonStyle(
-                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST, color=OUTLINE)
+                bgcolor=SURFACE_TOP, color=OUTLINE)
         page.update()
 
     # ── Popup matching de personnage ──────────────────────
@@ -1609,8 +1995,8 @@ def main(page: ft.Page):
             def select_puppet(puppet_id):
                 selected["puppet"] = puppet_id
                 for pid, cont in puppet_btns:
-                    cont.border  = ft.Border.all(2, "#8b5cf6") if pid == puppet_id else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
-                    cont.bgcolor = ft.Colors.SURFACE_CONTAINER_HIGH if pid == puppet_id else ft.Colors.SURFACE_CONTAINER
+                    cont.border  = ft.Border.all(2, ACCENT) if pid == puppet_id else ft.Border.all(1, BORDER)
+                    cont.bgcolor = SURFACE_TOP if pid == puppet_id else SURFACE_HIGH
                 page.update()
 
             def confirm_and_close(puppet=None):
@@ -1635,14 +2021,14 @@ def main(page: ft.Page):
                 short = PUPPET_NAMES.get(puppet_id, puppet_id.replace(" VQA.puppet-button", ""))
                 cont = ft.Container(
                     content=ft.Column([
-                        ft.Icon(icon_gender, size=30, color="#8b5cf6"),
+                        ft.Icon(icon_gender, size=30, color=ACCENT),
                         ft.Text(short, size=10, text_align=ft.TextAlign.CENTER,
                                 max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=4),
                     width=88, height=82,
                     border_radius=8,
-                    bgcolor=ft.Colors.SURFACE_CONTAINER,
-                    border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                    bgcolor=SURFACE_HIGH,
+                    border=ft.Border.all(1, BORDER),
                     padding=ft.Padding.all(6),
                     on_click=lambda e, p=puppet_id: select_puppet(p),
                     ink=True,
@@ -1658,7 +2044,7 @@ def main(page: ft.Page):
             dlg = ft.AlertDialog(
                 modal=True,
                 title=ft.Row([
-                    ft.Icon(ft.Icons.PERSON_SEARCH, color="#8b5cf6", size=22),
+                    ft.Icon(ft.Icons.PERSON_SEARCH, color=ACCENT, size=22),
                     ft.Text(f"Personnage pour «{label}»", size=14,
                             weight=ft.FontWeight.BOLD, expand=True),
                     timer_text,
@@ -1679,7 +2065,7 @@ def main(page: ft.Page):
                     ft.FilledButton(
                         "Valider la sélection",
                         on_click=lambda e: confirm_and_close(),
-                        style=ft.ButtonStyle(bgcolor="#8b5cf6", color="white"),
+                        style=ft.ButtonStyle(bgcolor=ACCENT, color="white"),
                     ),
                 ],
                 actions_alignment=ft.MainAxisAlignment.END,
@@ -1707,16 +2093,28 @@ def main(page: ft.Page):
             raise
 
     # ── Sidebar ───────────────────────────────────────────
-    start_btn = ft.FilledButton(
-        "Demarrer", icon=ft.Icons.PLAY_ARROW,
+    start_btn = ft.ElevatedButton(
+        "Démarrer", icon=ft.Icons.PLAY_ARROW,
         on_click=start_scheduler,
-        style=ft.ButtonStyle(bgcolor=SUCCESS, color="white"),
+        style=ft.ButtonStyle(
+            bgcolor=SUCCESS, color="white",
+            shape=ft.RoundedRectangleBorder(radius=8),
+            elevation=0,
+            padding=ft.Padding.symmetric(horizontal=14, vertical=10),
+        ),
+        expand=True,
     )
-    stop_btn = ft.FilledButton(
-        "Arreter", icon=ft.Icons.STOP,
+    stop_btn = ft.ElevatedButton(
+        "Arrêter", icon=ft.Icons.STOP,
         on_click=stop_scheduler,
-        style=ft.ButtonStyle(bgcolor="#4a4a4a", color="#888888"),
+        style=ft.ButtonStyle(
+            bgcolor="rgba(255,255,255,0.05)", color=OUTLINE,
+            shape=ft.RoundedRectangleBorder(radius=8),
+            elevation=0,
+            padding=ft.Padding.symmetric(horizontal=14, vertical=10),
+        ),
         disabled=True,
+        expand=True,
     )
 
     # ── Stepper concurrence Adobe ──────────────────────────
@@ -1761,7 +2159,7 @@ def main(page: ft.Page):
                       style=ft.ButtonStyle(padding=0)),
         ft.Container(
             content=_conc_lbl,
-            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+            bgcolor=SURFACE_TOP,
             border_radius=6,
             padding=ft.Padding.symmetric(horizontal=6, vertical=2),
         ),
@@ -1770,126 +2168,137 @@ def main(page: ft.Page):
                       style=ft.ButtonStyle(padding=0)),
     ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
+    def _nav_btn(icon, label, subtitle, on_click_fn, color=None, danger=False):
+        ic = ERROR_C if danger else (color or OUTLINE)
+        lc = ERROR_C if danger else (color or ON_SURFACE)
+        return ft.Container(
+            content=ft.Row([
+                ft.Container(
+                    content=ft.Icon(icon, size=15, color=ic),
+                    width=30, height=30, border_radius=8,
+                    bgcolor="rgba(239,68,68,0.10)" if danger else (ACCENT_DIM if color else "rgba(255,255,255,0.04)"),
+                    alignment=ft.Alignment.CENTER,
+                ),
+                ft.Column([
+                    ft.Text(label, size=12, color=lc, weight=ft.FontWeight.W_500),
+                    ft.Text(subtitle, size=10, color=OUTLINE),
+                ], spacing=1, tight=True, expand=True),
+            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=8),
+            border_radius=8,
+            on_click=on_click_fn,
+            ink=True,
+            ink_color="rgba(124,58,237,0.06)",
+        )
+
     sidebar = ft.Container(
         content=ft.Column([
-            # Brand
+            # ── Brand ──────────────────────────────────────
             ft.Container(
-                content=ft.Column([
-                    ft.Text("Mr Martin", size=22, weight=ft.FontWeight.BOLD),
-                    ft.Text("Video Automation", size=12, color=OUTLINE),
-                ], spacing=2),
-                padding=ft.Padding.only(bottom=12),
+                content=ft.Row([
+                    ft.Container(
+                        content=ft.Text("M", size=16, weight=ft.FontWeight.BOLD, color="white"),
+                        width=36, height=36, border_radius=10,
+                        bgcolor=ACCENT,
+                        alignment=ft.Alignment.CENTER,
+                    ),
+                    ft.Column([
+                        ft.Text("Mr Martin", size=14, weight=ft.FontWeight.BOLD, color=ON_SURFACE),
+                        ft.Text("Video Automation", size=10, color=OUTLINE),
+                    ], spacing=1, tight=True),
+                ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=ft.Padding.only(bottom=16),
             ),
-            ft.Divider(height=1, color=ft.Colors.OUTLINE_VARIANT),
+            ft.Divider(height=1, color=BORDER),
 
-            # ── Comptes TikTok ────────────────────────────
-            ft.Text("COMPTES TIKTOK", size=10, weight=ft.FontWeight.BOLD, color=OUTLINE),
+            # ── Comptes TikTok ──────────────────────────────
+            ft.Container(
+                content=ft.Text("COMPTES", size=9, weight=ft.FontWeight.BOLD, color=OUTLINE),
+                padding=ft.Padding.only(top=12, bottom=6, left=2),
+            ),
             accounts_col,
-            ft.FilledTonalButton(
-                "Connecter un compte",
-                icon=ft.Icons.ADD,
-                on_click=connect_new_account,
-                style=ft.ButtonStyle(
-                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-                    color="#8b5cf6",
-                ),
-                width=240,
-            ),
-            ft.TextButton(
-                "Actualiser noms et photos",
-                icon=ft.Icons.SYNC,
-                on_click=refresh_profiles,
-                style=ft.ButtonStyle(color=OUTLINE),
-                width=240,
-            ),
-            ft.Divider(height=1, color=ft.Colors.OUTLINE_VARIANT),
-
-            # ── Scheduler ────────────────────────────────
-            ft.Text("AUTOMATISATION", size=10, weight=ft.FontWeight.BOLD, color=OUTLINE),
-            ft.Row([start_btn, stop_btn], spacing=8),
-            matching_mode_btn,
-            _conc_row,
-            ft.Divider(height=1, color=ft.Colors.OUTLINE_VARIANT),
-
-            # ── Actions ───────────────────────────────────
-            ft.Text("ACTIONS", size=10, weight=ft.FontWeight.BOLD, color=OUTLINE),
-
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.SEARCH, size=20),
-                title=ft.Text("Scraper des videos", size=13),
-                subtitle=ft.Text("Telecharge depuis TikTok", size=11),
-                on_click=run_scraper, dense=True,
-            ),
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.RESTART_ALT, size=20),
-                title=ft.Text("Reset quota du jour", size=13),
-                subtitle=ft.Text("Remet le compteur a zero", size=11),
-                on_click=reset_quota, dense=True,
-            ),
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.KEY, size=20),
-                title=ft.Text("Rafraichir le token", size=13),
-                subtitle=ft.Text("Renouvelle l'acces TikTok", size=11),
-                on_click=refresh_token_active, dense=True,
-            ),
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.UPLOAD, size=20, color=SUCCESS),
-                title=ft.Text("Poster la derniere video", size=13, color=SUCCESS),
-                subtitle=ft.Text("Envoie sur TikTok", size=11),
-                on_click=post_latest, dense=True,
-            ),
-            ft.Divider(height=1, color=ft.Colors.OUTLINE_VARIANT),
-
-            # ── Outils ────────────────────────────────────
-            ft.Text("OUTILS", size=10, weight=ft.FontWeight.BOLD, color=OUTLINE),
-
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.BAR_CHART, size=20),
-                title=ft.Text("Stats TikTok", size=13),
-                subtitle=ft.Text("Performances par prompt", size=11),
-                on_click=show_stats, dense=True,
-            ),
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.HISTORY, size=20),
-                title=ft.Text("Historique uploads", size=13),
-                subtitle=ft.Text("20 derniers envois", size=11),
-                on_click=show_upload_history, dense=True,
-            ),
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.FOLDER_OPEN, size=20),
-                title=ft.Text("Ouvrir download/", size=13),
-                subtitle=ft.Text("Vidéos en attente", size=11),
-                on_click=open_download_folder, dense=True,
-            ),
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.RESTART_ALT, size=20, color=WARN_C),
-                title=ft.Text("Réinitialiser pipeline", size=13, color=WARN_C),
-                subtitle=ft.Text("Relance les étapes depuis l'état zéro", size=11),
-                on_click=reset_pipeline_state, dense=True,
-            ),
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.DELETE_SWEEP, size=20, color=WARN_C),
-                title=ft.Text("Vider download/", size=13, color=WARN_C),
-                subtitle=ft.Text("Supprime la queue", size=11),
-                on_click=clear_download, dense=True,
-            ),
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.SYSTEM_UPDATE_ALT, size=20),
-                title=ft.Text("Mettre à jour yt-dlp", size=13),
-                subtitle=ft.Text("Évite les blocages TikTok", size=11),
-                on_click=update_ytdlp, dense=True,
-            ),
-
-            # Clock
             ft.Container(
-                content=ft.Text(datetime.now().strftime("%H:%M"), size=11, color=OUTLINE),
-                alignment=ft.Alignment.CENTER,
-                padding=ft.Padding.only(top=8),
+                content=ft.Row([
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Icon(ft.Icons.ADD, size=14, color=PRIMARY),
+                            ft.Text("Connecter", size=12, color=PRIMARY),
+                        ], spacing=6),
+                        padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+                        border_radius=8,
+                        bgcolor=ACCENT_DIM,
+                        on_click=connect_new_account,
+                        ink=True,
+                        expand=True,
+                    ),
+                    ft.Container(width=8),
+                    ft.Container(
+                        content=ft.Icon(ft.Icons.SYNC, size=15, color=OUTLINE),
+                        width=36, height=36, border_radius=8,
+                        bgcolor="rgba(255,255,255,0.04)",
+                        alignment=ft.Alignment.CENTER,
+                        on_click=refresh_profiles,
+                        ink=True,
+                        tooltip="Actualiser noms et photos",
+                    ),
+                ], spacing=0),
             ),
-        ], spacing=8, scroll=ft.ScrollMode.AUTO, expand=True),
-        width=290,
-        bgcolor=ft.Colors.SURFACE_CONTAINER,
-        padding=ft.Padding.all(20),
+            ft.Divider(height=1, color=BORDER),
+
+            # ── Automatisation ──────────────────────────────
+            ft.Container(
+                content=ft.Text("AUTOMATISATION", size=9, weight=ft.FontWeight.BOLD, color=OUTLINE),
+                padding=ft.Padding.only(top=12, bottom=8, left=2),
+            ),
+            ft.Row([start_btn, stop_btn], spacing=8),
+            ft.Container(height=4),
+            matching_mode_btn,
+            ft.Container(height=4),
+            _conc_row,
+            ft.Divider(height=1, color=BORDER),
+
+            # ── Actions ─────────────────────────────────────
+            ft.Container(
+                content=ft.Text("ACTIONS", size=9, weight=ft.FontWeight.BOLD, color=OUTLINE),
+                padding=ft.Padding.only(top=12, bottom=4, left=2),
+            ),
+            _nav_btn(ft.Icons.SEARCH, "Scraper des vidéos", "Télécharge depuis TikTok", run_scraper),
+            _nav_btn(ft.Icons.TUNE, "Config scraping", "Comptes, quota, durées", show_scraper_config, color=PRIMARY),
+            _nav_btn(ft.Icons.SEND, "Poster la dernière vidéo", "Envoie sur TikTok", post_latest, color=SUCCESS),
+            _nav_btn(ft.Icons.VPN_KEY, "Rafraîchir le token", "Renouvelle l'accès TikTok", refresh_token_active),
+            ft.Divider(height=1, color=BORDER),
+
+            # ── Outils ──────────────────────────────────────
+            ft.Container(
+                content=ft.Text("OUTILS", size=9, weight=ft.FontWeight.BOLD, color=OUTLINE),
+                padding=ft.Padding.only(top=12, bottom=4, left=2),
+            ),
+            _nav_btn(ft.Icons.BAR_CHART, "Stats TikTok", "Performances par prompt", show_stats),
+            _nav_btn(ft.Icons.HISTORY, "Historique uploads", "20 derniers envois", show_upload_history),
+            _nav_btn(ft.Icons.FOLDER_OPEN, "Ouvrir download/", "Vidéos en attente", open_download_folder),
+            ft.Divider(height=1, color=BORDER),
+
+            # ── Maintenance ──────────────────────────────────
+            ft.Container(
+                content=ft.Text("MAINTENANCE", size=9, weight=ft.FontWeight.BOLD, color=OUTLINE),
+                padding=ft.Padding.only(top=12, bottom=4, left=2),
+            ),
+            _nav_btn(ft.Icons.RESTART_ALT, "Reset quota", "Remet le compteur à zéro", reset_quota),
+            _nav_btn(ft.Icons.SYSTEM_UPDATE_ALT, "Mettre à jour yt-dlp", "Évite les blocages TikTok", update_ytdlp),
+            _nav_btn(ft.Icons.REPLAY, "Réinitialiser pipeline", "Repart de l'état zéro", reset_pipeline_state, danger=True),
+            _nav_btn(ft.Icons.DELETE_SWEEP, "Vider download/", "Supprime la queue", clear_download, danger=True),
+
+            # ── Horloge ─────────────────────────────────────
+            ft.Container(
+                content=ft.Text(datetime.now().strftime("%H:%M"), size=11, color=MUTED),
+                alignment=ft.Alignment.CENTER,
+                padding=ft.Padding.only(top=12),
+            ),
+        ], spacing=2, scroll=ft.ScrollMode.AUTO, expand=True),
+        width=270,
+        bgcolor=SURFACE,
+        border=ft.border.only(right=ft.border.BorderSide(1, BORDER)),
+        padding=ft.Padding.all(16),
     )
 
     # ── Main layout ───────────────────────────────────────
@@ -1906,7 +2315,8 @@ def main(page: ft.Page):
     main_area = ft.Container(
         content=main_content,
         expand=True,
-        padding=ft.Padding.all(24),
+        padding=ft.Padding.all(20),
+        bgcolor=BG,
     )
 
     page.add(ft.Row([sidebar, main_area], spacing=0, expand=True))
@@ -1957,6 +2367,12 @@ def main(page: ft.Page):
                     needs_update = True
                 if needs_update:
                     page.update()
+                if changed:
+                    try:
+                        log_list.scroll_to(offset=float("inf"), duration=0)
+                        page.update()
+                    except Exception:
+                        pass
             except Exception:
                 pass
 

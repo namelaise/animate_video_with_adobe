@@ -17,6 +17,8 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+sys.path.insert(0, str(Path(__file__).parent / "pipeline"))
+sys.path.insert(0, str(Path(__file__).parent / "tiktok"))
 from scraper_tiktok import scrape_accounts, DEFAULT_ACCOUNTS, DEFAULT_DAILY_LIMIT, get_daily_count
 
 
@@ -44,6 +46,7 @@ LOG_FILE = os.path.join(LOG_DIR, "log.txt")
 GENERATE_INTERVAL = 10   # secondes (ici mis à 10 pour test)
 POST_INTERVAL = 10       # secondes (idem)
 REJECTED_DIR = os.path.join(BASE_DIR, 'moderation_rejected')
+MAX_RETRIES = 3  # Nombre max d'échecs pipeline avant abandon définitif d'une vidéo
 
 VIDEO_EXTS = ('.mp4', '.mov', '.mkv', '.avi')
 
@@ -224,6 +227,7 @@ def scrape_loop():
 
 def generation_loop():
     _state_file = Path(BASE_DIR) / "pipeline_state.json"
+    _retry_counts: dict = {}  # {video_name: nb_echecs}
 
     while True:
         try:
@@ -293,15 +297,26 @@ def generation_loop():
                     except Exception as ex:
                         log.error(f'Impossible de deplacer la video rejetee: {ex}')
                 elif rc != 0:
-                    # Echec pipeline : remettre la video dans download/ pour retry
                     video_name = os.path.basename(src)
-                    restore_path = os.path.join(BASE_DIR, 'download', video_name)
-                    try:
-                        if not os.path.exists(restore_path) and os.path.exists(MAIN_INPUT_PATH):
-                            shutil.copy2(MAIN_INPUT_PATH, restore_path)
-                            log.warning(f'Pipeline echoue — video remise en file: {video_name}')
-                    except Exception as ex:
-                        log.error(f'Impossible de remettre la video en file: {ex}')
+                    _retry_counts[video_name] = _retry_counts.get(video_name, 0) + 1
+                    if _retry_counts[video_name] >= MAX_RETRIES:
+                        log.error(f'Video {video_name} abandonnee apres {MAX_RETRIES} echecs — archivee dans moderation_rejected/')
+                        try:
+                            os.makedirs(REJECTED_DIR, exist_ok=True)
+                            dest = os.path.join(REJECTED_DIR, video_name)
+                            if os.path.exists(MAIN_INPUT_PATH):
+                                shutil.move(MAIN_INPUT_PATH, dest)
+                        except Exception as ex:
+                            log.error(f'Impossible d\'archiver la video: {ex}')
+                        _retry_counts.pop(video_name, None)
+                    else:
+                        restore_path = os.path.join(BASE_DIR, 'download', video_name)
+                        try:
+                            if not os.path.exists(restore_path) and os.path.exists(MAIN_INPUT_PATH):
+                                shutil.copy2(MAIN_INPUT_PATH, restore_path)
+                                log.warning(f'Pipeline echoue (essai {_retry_counts[video_name]}/{MAX_RETRIES}) — video remise en file: {video_name}')
+                        except Exception as ex:
+                            log.error(f'Impossible de remettre la video en file: {ex}')
             log.info(f'Fin du cycle de génération. Pause {GENERATE_INTERVAL} secondes')
         except Exception:
             log.exception('Erreur inattendue dans generation_loop')
@@ -311,7 +326,7 @@ def generation_loop():
 def post_video(final_mp4, poll=True, extra_args=None, timeout=30*60):
     """Lance post_tiktok_inbox.py en streaming console + fichier log."""
     final_mp4 = str(Path(final_mp4))
-    script = os.path.join(BASE_DIR, "post_tiktok_inbox.py")
+    script = os.path.join(BASE_DIR, "pipeline", "post_tiktok_inbox.py")
 
     cmd = [
         PYTHON_EXE,

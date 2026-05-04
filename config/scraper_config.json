@@ -1,0 +1,12 @@
+{
+  "accounts": [
+    "https://www.tiktok.com/@martinspam001",
+    "https://www.tiktok.com/@sticker.art01",
+    "https://www.tiktok.com/@le_boss_des_pranks",
+    "https://www.tiktok.com/@allomartin",
+    "https://www.tiktok.com/@mrmartinrireetchansons"
+  ],
+  "daily_limit": 5,
+  "min_duration": 10,
+  "max_duration": 600
+}

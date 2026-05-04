@@ -32,6 +32,8 @@ from tqdm import tqdm
 from openai import OpenAI
 import openai
 
+sys.path.insert(0, str(Path(__file__).parent / "pipeline"))
+sys.path.insert(0, str(Path(__file__).parent / "tiktok"))
 from automate_adobe_with_bg import Task, run_pool, _safe_filename
 from assemble_guarded import assemble_from_tail_with_transcript
 from segments_processing import (
@@ -55,7 +57,7 @@ load_dotenv()
 # LOGGING
 # =========================================================
 
-LOG_DIR = Path("./logs")
+LOG_DIR = Path(__file__).parent / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 log = logging.getLogger("pipeline")
@@ -433,7 +435,7 @@ def _detect_token_issue(blob: str) -> bool:
 
 def _refresh_token_ok(python_exe: str, log_path: Path) -> bool:
     """Lance auth_tiktok_refresh.py et retourne True si le refresh a réussi."""
-    rc, out, err = run_cmd_capture([python_exe, "auth_tiktok_refresh.py"], log_path)
+    rc, out, err = run_cmd_capture([python_exe, str(Path(__file__).parent / "tiktok" / "auth_tiktok_refresh.py")], log_path)
     if rc != 0:
         blob = (out + "\n" + err).lower()
         if "refresh" in blob and ("expir" in blob or "invalid" in blob or "introuvable" in blob):
@@ -502,7 +504,7 @@ def _upload_with_account(
     label = get_account_label(account_id)
 
     def _post(direct: bool = False, tok: str = token):
-        cmd = [python_exe, "post_tiktok_inbox.py", "--video", final_mp4, "--poll",
+        cmd = [python_exe, str(Path(__file__).parent / "pipeline" / "post_tiktok_inbox.py"), "--video", final_mp4, "--poll",
                "--token", tok]
         if direct and caption:
             cmd.extend(["--direct", "--caption", caption])
@@ -539,7 +541,7 @@ def _upload_with_account(
     # Token invalide → refresh + retry
     if _detect_token_issue(blob):
         log.warning(f"🔐 Token invalide ({label}) → rafraîchissement…")
-        refresh_cmd = [python_exe, "auth_tiktok_refresh.py", "--account", account_id]
+        refresh_cmd = [python_exe, str(Path(__file__).parent / "tiktok" / "auth_tiktok_refresh.py"), "--account", account_id]
         rc_r, _, _ = run_cmd_capture(refresh_cmd, log_path)
         if rc_r != 0:
             log.error(f"⛔ Refresh échoué pour {label}")
@@ -946,29 +948,39 @@ class ModerationRejectedError(RuntimeError):
 # ── Gemini Playwright ─────────────────────────────────────────────────────────
 
 def _prepare_gemini_profile() -> str:
-    """Copie le profil Chrome de base vers un répertoire temporaire UNIQUE.
-    Chaque run obtient son propre dossier — plus de conflit de lockfile entre runs.
+    """Copie uniquement les fichiers de cookies/session depuis le profil de base vers un
+    répertoire temporaire UNIQUE. On évite de copier tout le profil car les fichiers de
+    version Chrome (ShaderCache, Snapshots, etc.) causent un crash de downgrade quand le
+    profil a été créé par une version de Chrome plus récente que Playwright Chromium.
     Retourne le chemin du profil temporaire."""
     import tempfile
     profiles_dir = os.path.join(
         os.getenv("BASE_DIR", str(Path(__file__).parent)), "profiles"
     )
     os.makedirs(profiles_dir, exist_ok=True)
-    tmp_dir = tempfile.mkdtemp(prefix="gemini_profile_", dir=profiles_dir)
-    try:
-        shutil.copytree(BASE_PROFILE_PATH, tmp_dir, dirs_exist_ok=True)
-    except shutil.Error as e:
-        skipped = len(e.args[0]) if e.args else "?"
-        log.warning("[Gemini] Profil copié avec %s fichier(s) ignoré(s) (verrouillés/invalides)", skipped)
-    # Supprimer les lockfiles copiés depuis le profil source
-    for lockfile in ["lockfile", "SingletonLock", "SingletonCookie", "SingletonSocket"]:
-        lf = Path(tmp_dir) / lockfile
-        try:
-            lf.unlink(missing_ok=True)
-        except Exception:
-            pass
+    tmp_dir = Path(tempfile.mkdtemp(prefix="gemini_profile_", dir=profiles_dir))
+    base = Path(BASE_PROFILE_PATH)
+    # Créer l'arborescence minimale nécessaire
+    (tmp_dir / "Default" / "Network").mkdir(parents=True, exist_ok=True)
+    # Copier uniquement les fichiers essentiels pour les cookies et la session
+    essential_files = [
+        "Local State",
+        "Default/Cookies",
+        "Default/Network/Cookies",
+        "Default/Login Data",
+        "Default/Web Data",
+    ]
+    for rel in essential_files:
+        src = base / rel
+        dst = tmp_dir / rel
+        if src.exists():
+            try:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+            except Exception:
+                pass
     log.info("[Gemini] Profil temporaire créé: %s", tmp_dir)
-    return tmp_dir
+    return str(tmp_dir)
 
 
 def _cleanup_gemini_profile(profile_path: str) -> None:
@@ -1062,9 +1074,9 @@ async def _gemini_generate_image(prompt: str, output_path: str) -> bool:
             await page.keyboard.press("Enter")
             log.info("[Gemini] Prompt envoyé, attente de l'image...")
 
-            # Attendre l'image (max 90s)
+            # Attendre l'image (max 180s)
             img_url = None
-            for i in range(18):
+            for i in range(36):
                 await page.wait_for_timeout(5000)
                 imgs = await page.evaluate("""
                     () => [...document.querySelectorAll('img')]
@@ -1212,7 +1224,7 @@ async def _download_gemini_image(page, output_path: str) -> bool:
         "[data-test-id='download-button']",
         "message-actions button[aria-label*='load' i]",
     ]
-    for _ in range(18):
+    for _ in range(36):
         for sel in download_selectors:
             try:
                 el = page.locator(sel).last
@@ -1354,7 +1366,7 @@ async def _gemini_page_generate(page, prompt: str, output_path: str) -> bool:
         await page.keyboard.press("Enter")
 
         img_url = None
-        for i in range(18):
+        for i in range(36):
             await page.wait_for_timeout(5000)
             imgs = await page.evaluate("""
                 () => [...document.querySelectorAll('img')]
@@ -2173,7 +2185,7 @@ def run_pipeline_once() -> Tuple[bool, str]:
         else:
             with time_step("8) Génération vidéos segments (Adobe) avec fonds dynamiques"):
                 wait_for_internet(label="Adobe generation")
-                _adobe_concurrency = int(os.getenv("ADOBE_CONCURRENCY", "8"))
+                _adobe_concurrency = int(os.getenv("ADOBE_CONCURRENCY", "3"))
                 log.info("Adobe concurrency: %d onglets | fonds: %d",
                          _adobe_concurrency, len(_bg_pairs) if _bg_pairs else 1)
                 automate_generation_videos(

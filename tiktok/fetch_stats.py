@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BASE_DIR        = Path(os.getenv("BASE_DIR", Path(__file__).parent))
+BASE_DIR        = Path(os.getenv("BASE_DIR", Path(__file__).parent.parent))
 HISTORY_FILE    = BASE_DIR / "upload_history.json"
 TOKEN_FILE      = BASE_DIR / "config" / "tiktok_tokens.json"
 
