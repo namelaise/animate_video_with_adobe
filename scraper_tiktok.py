@@ -24,6 +24,7 @@ BASE_DIR = Path(os.getenv("BASE_DIR", os.path.dirname(os.path.abspath(__file__))
 DOWNLOAD_DIR = BASE_DIR / "download"
 HISTORY_FILE = BASE_DIR / "scraper_history.json"
 DAILY_LOG_FILE = BASE_DIR / "scraper_daily.json"
+SCRAPER_CONFIG_FILE = BASE_DIR / "scraper_config.json"
 
 LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -41,15 +42,42 @@ if not log.handlers:
     log.addHandler(_fh)
     log.propagate = False
 
-DEFAULT_ACCOUNTS = [
+_FALLBACK_ACCOUNTS = [
     "https://www.tiktok.com/@martinspam001",
     "https://www.tiktok.com/@sticker.art01",
     "https://www.tiktok.com/@le_boss_des_pranks",
     "https://www.tiktok.com/@allomartin",
     "https://www.tiktok.com/@mrmartinrireetchansons",
 ]
+_FALLBACK_LIMIT = 5
 
-DEFAULT_DAILY_LIMIT = 5
+
+def load_scraper_config() -> dict:
+    """Lit scraper_config.json. Retourne les valeurs par défaut si absent/corrompu."""
+    try:
+        if SCRAPER_CONFIG_FILE.exists():
+            data = json.loads(SCRAPER_CONFIG_FILE.read_text(encoding="utf-8"))
+            accounts = data.get("accounts") or _FALLBACK_ACCOUNTS
+            limit = int(data.get("daily_limit") or _FALLBACK_LIMIT)
+            return {
+                "accounts": accounts,
+                "daily_limit": limit,
+                "min_duration": int(data.get("min_duration", 10)),
+                "max_duration": int(data.get("max_duration", 600)),
+            }
+    except Exception:
+        log.warning("scraper_config.json illisible, utilisation des valeurs par défaut.")
+    return {
+        "accounts": _FALLBACK_ACCOUNTS,
+        "daily_limit": _FALLBACK_LIMIT,
+        "min_duration": 10,
+        "max_duration": 600,
+    }
+
+
+_config = load_scraper_config()
+DEFAULT_ACCOUNTS = _config["accounts"]
+DEFAULT_DAILY_LIMIT = _config["daily_limit"]
 
 
 def load_history() -> set:
@@ -62,10 +90,27 @@ def load_history() -> set:
     return set()
 
 
+def _atomic_write(path: Path, content: str):
+    """Écrit dans un fichier temporaire puis renomme atomiquement (évite la corruption)."""
+    import tempfile
+    dir_ = path.parent
+    fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
+
+
 def save_history(ids: set):
-    HISTORY_FILE.write_text(
+    _atomic_write(
+        HISTORY_FILE,
         json.dumps({"downloaded_ids": sorted(ids)}, indent=2, ensure_ascii=False),
-        encoding="utf-8"
     )
 
 
@@ -83,9 +128,9 @@ def get_daily_count() -> int:
 
 def set_daily_count(count: int):
     today = date.today().isoformat()
-    DAILY_LOG_FILE.write_text(
+    _atomic_write(
+        DAILY_LOG_FILE,
         json.dumps({"date": today, "count": count}, indent=2),
-        encoding="utf-8"
     )
 
 
@@ -251,10 +296,10 @@ def scrape_accounts(accounts: list[str], limit: int = DEFAULT_DAILY_LIMIT) -> in
         for v in videos:
             vid = v["id"]
             if vid and vid not in history:
-                # Filtrer les videos trop courtes (< 10s) ou trop longues (> 10min)
+                cfg = load_scraper_config()
                 dur = v.get("duration")
-                if dur is not None and (dur < 10 or dur > 600):
-                    log.info(f"  Skip {vid} (duree={dur}s hors limites)")
+                if dur is not None and (dur < cfg["min_duration"] or dur > cfg["max_duration"]):
+                    log.info(f"  Skip {vid} (duree={dur}s hors limites [{cfg['min_duration']}-{cfg['max_duration']}s])")
                     continue
                 v["_account_url"] = account_url
                 all_new_videos.append(v)

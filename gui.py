@@ -32,6 +32,7 @@ MATCHING_MODE_FILE     = BASE_DIR / "matching_mode.json"
 MATCHING_REQUEST_FILE  = BASE_DIR / "matching_request.json"
 MATCHING_RESPONSE_FILE = BASE_DIR / "matching_response.json"
 GUI_CONFIG_FILE        = BASE_DIR / "gui_config.json"
+SCRAPER_CONFIG_FILE    = BASE_DIR / "scraper_config.json"
 ACCOUNTS_FILE          = BASE_DIR / "config" / "tiktok_accounts.json"
 PIPELINE_STATE_FILE    = BASE_DIR / "pipeline_state.json"
 VENV_PYTHON = BASE_DIR / "venv" / "Scripts" / "python.exe"
@@ -972,6 +973,165 @@ def main(page: ft.Page):
             page.run_thread(lambda: (_end_action_log(success, msg), toast(msg, kind)))
         threading.Thread(target=do, daemon=True).start()
 
+    # ── Scraper config ────────────────────────────────────────
+    def _load_scraper_config() -> dict:
+        default = {
+            "accounts": [],
+            "daily_limit": 5,
+            "min_duration": 10,
+            "max_duration": 600,
+        }
+        try:
+            if SCRAPER_CONFIG_FILE.exists():
+                data = json.loads(SCRAPER_CONFIG_FILE.read_text(encoding="utf-8"))
+                default.update(data)
+        except Exception:
+            pass
+        return default
+
+    def _save_scraper_config(cfg: dict):
+        import tempfile
+        dir_ = SCRAPER_CONFIG_FILE.parent
+        fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, SCRAPER_CONFIG_FILE)
+        except Exception as ex:
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
+            toast(f"Erreur sauvegarde config: {ex}", "error")
+
+    def show_scraper_config(e=None):
+        cfg = _load_scraper_config()
+        accounts_list = list(cfg.get("accounts", []))
+
+        accounts_field = ft.ListView(spacing=4, height=180)
+        limit_val = {"ref": int(cfg.get("daily_limit", 5))}
+        min_dur_val = {"ref": int(cfg.get("min_duration", 10))}
+        max_dur_val = {"ref": int(cfg.get("max_duration", 600))}
+
+        limit_lbl = ft.Text(str(limit_val["ref"]), size=14, weight=ft.FontWeight.BOLD,
+                            color="white", width=28, text_align=ft.TextAlign.CENTER)
+        min_dur_lbl = ft.Text(str(min_dur_val["ref"]), size=13, color="white", width=36,
+                              text_align=ft.TextAlign.CENTER)
+        max_dur_lbl = ft.Text(str(max_dur_val["ref"]), size=13, color="white", width=36,
+                              text_align=ft.TextAlign.CENTER)
+
+        def rebuild_list():
+            accounts_field.controls.clear()
+            for i, url in enumerate(accounts_list):
+                idx = i
+
+                def make_remove(j=idx):
+                    def do(e):
+                        accounts_list.pop(j)
+                        rebuild_list()
+                        page.update()
+                    return do
+
+                accounts_field.controls.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Text(url, size=11, expand=True, color=ON_SURFACE,
+                                    overflow=ft.TextOverflow.ELLIPSIS, no_wrap=True),
+                            ft.IconButton(ft.Icons.CLOSE, icon_size=14, icon_color=OUTLINE,
+                                          on_click=make_remove(i),
+                                          style=ft.ButtonStyle(padding=ft.Padding.all(0))),
+                        ], spacing=6),
+                        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                        border_radius=6,
+                        padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+                    )
+                )
+
+        rebuild_list()
+
+        new_url_field = ft.TextField(
+            hint_text="https://www.tiktok.com/@compte",
+            text_size=12,
+            height=40,
+            content_padding=ft.Padding.symmetric(horizontal=10, vertical=8),
+            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+            border_color=ft.Colors.OUTLINE_VARIANT,
+            focused_border_color="#8b5cf6",
+        )
+
+        def add_account(e):
+            url = (new_url_field.value or "").strip()
+            if url and url not in accounts_list:
+                accounts_list.append(url)
+                new_url_field.value = ""
+                rebuild_list()
+                page.update()
+
+        def make_stepper_row(label, val_holder, lbl_widget, step, min_v, max_v):
+            def dec(e):
+                val_holder["ref"] = max(min_v, val_holder["ref"] - step)
+                lbl_widget.value = str(val_holder["ref"])
+                page.update()
+            def inc(e):
+                val_holder["ref"] = min(max_v, val_holder["ref"] + step)
+                lbl_widget.value = str(val_holder["ref"])
+                page.update()
+            return ft.Row([
+                ft.Text(label, size=12, color=OUTLINE, expand=True),
+                ft.IconButton(ft.Icons.REMOVE, icon_size=16, on_click=dec,
+                              style=ft.ButtonStyle(padding=ft.Padding.all(0))),
+                ft.Container(content=lbl_widget,
+                             bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                             border_radius=6,
+                             padding=ft.Padding.symmetric(horizontal=6, vertical=2)),
+                ft.IconButton(ft.Icons.ADD, icon_size=16, on_click=inc,
+                              style=ft.ButtonStyle(padding=ft.Padding.all(0))),
+            ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+
+        def save_and_close(e):
+            new_cfg = {
+                "accounts": accounts_list,
+                "daily_limit": limit_val["ref"],
+                "min_duration": min_dur_val["ref"],
+                "max_duration": max_dur_val["ref"],
+            }
+            _save_scraper_config(new_cfg)
+            _close_dialog(dlg)
+            toast("Configuration scraping sauvegardée", "success")
+
+        dlg = ft.AlertDialog(
+            title=ft.Row([
+                ft.Icon(ft.Icons.MANAGE_SEARCH, color="#8b5cf6", size=20),
+                ft.Text("Configuration du scraping", size=14, weight=ft.FontWeight.BOLD),
+            ], spacing=10),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Comptes TikTok à scraper", size=12,
+                            weight=ft.FontWeight.BOLD, color=ON_SURFACE),
+                    accounts_field,
+                    ft.Row([
+                        new_url_field,
+                        ft.FilledTonalButton("Ajouter", icon=ft.Icons.ADD,
+                                             on_click=add_account),
+                    ], spacing=8),
+                    ft.Divider(height=12, color=ft.Colors.OUTLINE_VARIANT),
+                    make_stepper_row("Vidéos / jour", limit_val, limit_lbl, 1, 1, 20),
+                    make_stepper_row("Durée min (s)", min_dur_val, min_dur_lbl, 5, 5, 120),
+                    make_stepper_row("Durée max (s)", max_dur_val, max_dur_lbl, 30, 30, 3600),
+                ], spacing=10, tight=True),
+                width=520,
+                padding=ft.Padding.only(top=4, bottom=8),
+            ),
+            actions=[
+                ft.TextButton("Annuler", on_click=lambda e: _close_dialog(dlg)),
+                ft.FilledButton("Enregistrer",
+                                on_click=save_and_close,
+                                style=ft.ButtonStyle(bgcolor="#8b5cf6", color="white")),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        _open_dialog(dlg)
+
     def show_stats(e=None):
         toast("Chargement des stats...", "info")
         def do():
@@ -1816,27 +1976,27 @@ def main(page: ft.Page):
 
             ft.ListTile(
                 leading=ft.Icon(ft.Icons.SEARCH, size=20),
-                title=ft.Text("Scraper des videos", size=13),
-                subtitle=ft.Text("Telecharge depuis TikTok", size=11),
+                title=ft.Text("Scraper des vidéos", size=13),
+                subtitle=ft.Text("Télécharge depuis TikTok", size=11),
                 on_click=run_scraper, dense=True,
             ),
             ft.ListTile(
-                leading=ft.Icon(ft.Icons.RESTART_ALT, size=20),
-                title=ft.Text("Reset quota du jour", size=13),
-                subtitle=ft.Text("Remet le compteur a zero", size=11),
-                on_click=reset_quota, dense=True,
-            ),
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.KEY, size=20),
-                title=ft.Text("Rafraichir le token", size=13),
-                subtitle=ft.Text("Renouvelle l'acces TikTok", size=11),
-                on_click=refresh_token_active, dense=True,
+                leading=ft.Icon(ft.Icons.SETTINGS, size=20, color="#8b5cf6"),
+                title=ft.Text("Config scraping", size=13, color="#8b5cf6"),
+                subtitle=ft.Text("Comptes, quota, durées", size=11),
+                on_click=show_scraper_config, dense=True,
             ),
             ft.ListTile(
                 leading=ft.Icon(ft.Icons.UPLOAD, size=20, color=SUCCESS),
-                title=ft.Text("Poster la derniere video", size=13, color=SUCCESS),
+                title=ft.Text("Poster la dernière vidéo", size=13, color=SUCCESS),
                 subtitle=ft.Text("Envoie sur TikTok", size=11),
                 on_click=post_latest, dense=True,
+            ),
+            ft.ListTile(
+                leading=ft.Icon(ft.Icons.KEY, size=20),
+                title=ft.Text("Rafraîchir le token", size=13),
+                subtitle=ft.Text("Renouvelle l'accès TikTok", size=11),
+                on_click=refresh_token_active, dense=True,
             ),
             ft.Divider(height=1, color=ft.Colors.OUTLINE_VARIANT),
 
@@ -1861,10 +2021,27 @@ def main(page: ft.Page):
                 subtitle=ft.Text("Vidéos en attente", size=11),
                 on_click=open_download_folder, dense=True,
             ),
+            ft.Divider(height=1, color=ft.Colors.OUTLINE_VARIANT),
+
+            # ── Maintenance ────────────────────────────────
+            ft.Text("MAINTENANCE", size=10, weight=ft.FontWeight.BOLD, color=OUTLINE),
+
+            ft.ListTile(
+                leading=ft.Icon(ft.Icons.RESTART_ALT, size=20),
+                title=ft.Text("Reset quota du jour", size=13),
+                subtitle=ft.Text("Remet le compteur à zéro", size=11),
+                on_click=reset_quota, dense=True,
+            ),
+            ft.ListTile(
+                leading=ft.Icon(ft.Icons.SYSTEM_UPDATE_ALT, size=20),
+                title=ft.Text("Mettre à jour yt-dlp", size=13),
+                subtitle=ft.Text("Évite les blocages TikTok", size=11),
+                on_click=update_ytdlp, dense=True,
+            ),
             ft.ListTile(
                 leading=ft.Icon(ft.Icons.RESTART_ALT, size=20, color=WARN_C),
                 title=ft.Text("Réinitialiser pipeline", size=13, color=WARN_C),
-                subtitle=ft.Text("Relance les étapes depuis l'état zéro", size=11),
+                subtitle=ft.Text("Repart de l'état zéro", size=11),
                 on_click=reset_pipeline_state, dense=True,
             ),
             ft.ListTile(
@@ -1872,12 +2049,6 @@ def main(page: ft.Page):
                 title=ft.Text("Vider download/", size=13, color=WARN_C),
                 subtitle=ft.Text("Supprime la queue", size=11),
                 on_click=clear_download, dense=True,
-            ),
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.SYSTEM_UPDATE_ALT, size=20),
-                title=ft.Text("Mettre à jour yt-dlp", size=13),
-                subtitle=ft.Text("Évite les blocages TikTok", size=11),
-                on_click=update_ytdlp, dense=True,
             ),
 
             # Clock
