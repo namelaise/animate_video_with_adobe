@@ -1007,6 +1007,109 @@ CHROME_PATH_GEMINI = os.getenv(
     r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 )
 
+# =========================================================
+# VÉRIFICATION DES SESSIONS (Adobe / Gemini)
+# =========================================================
+
+_SESSION_LAUNCH_ARGS = [
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-blink-features=AutomationControlled",
+]
+
+
+def _clear_profile_locks(profile: str):
+    for lf in ["lockfile", "SingletonLock", "SingletonCookie", "SingletonSocket"]:
+        try:
+            Path(profile, lf).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+async def _check_session(url: str, bad_url_fragments: list[str]) -> bool:
+    """Ouvre le profil de base en headless, navigue vers url, retourne True si connecté."""
+    from playwright.async_api import async_playwright
+    if not BASE_PROFILE_PATH or not Path(BASE_PROFILE_PATH).exists():
+        return False
+    _clear_profile_locks(BASE_PROFILE_PATH)
+    try:
+        async with async_playwright() as p:
+            ctx = await p.chromium.launch_persistent_context(
+                BASE_PROFILE_PATH,
+                executable_path=CHROME_PATH_GEMINI,
+                headless=True,
+                args=_SESSION_LAUNCH_ARGS,
+            )
+            page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=20_000)
+                await page.wait_for_timeout(2_000)
+                final_url = page.url
+            finally:
+                await ctx.close()
+        return not any(frag in final_url for frag in bad_url_fragments)
+    except Exception as e:
+        log.warning("[session_check] Vérification échouée (%s): %s", url, e)
+        return False
+
+
+async def _do_login(url: str, label: str):
+    """Ouvre le profil de base en headful pour que l'utilisateur se connecte."""
+    from playwright.async_api import async_playwright
+    _clear_profile_locks(BASE_PROFILE_PATH)
+    async with async_playwright() as p:
+        ctx = await p.chromium.launch_persistent_context(
+            BASE_PROFILE_PATH,
+            executable_path=CHROME_PATH_GEMINI,
+            headless=False,
+            args=_SESSION_LAUNCH_ARGS,
+        )
+        page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+        await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+        log.info("🔐 [%s] Connecte-toi dans le navigateur, puis FERME la fenêtre.", label)
+        await ctx.wait_for_event("close", timeout=0)
+    log.info("✅ [%s] Session sauvegardée dans le profil.", label)
+
+
+async def ensure_sessions():
+    """Vérifie les sessions Adobe et Gemini avant le pipeline.
+    Ouvre un navigateur visible uniquement si une connexion est manquante."""
+    if not BASE_PROFILE_PATH:
+        log.warning("[session_check] BASE_PROFILE_PATH non défini — vérification ignorée.")
+        return
+
+    url_adobe  = os.getenv("URL_ADOBE", "https://new.express.adobe.com")
+    url_gemini = "https://gemini.google.com"
+
+    log.info("🔍 Vérification session Adobe Express…")
+    adobe_ok = await _check_session(
+        url_adobe,
+        bad_url_fragments=["auth.adobe.com", "account.adobe.com", "adobeid", "ims-na1"],
+    )
+    log.info("Adobe Express : %s", "✅ connecté" if adobe_ok else "❌ non connecté")
+    if not adobe_ok:
+        await _do_login(url_adobe, "Adobe")
+
+    log.info("🔍 Vérification session Gemini…")
+    gemini_ok = await _check_session(
+        url_gemini,
+        bad_url_fragments=["accounts.google.com"],
+    )
+    log.info("Gemini : %s", "✅ connecté" if gemini_ok else "❌ non connecté")
+    if not gemini_ok:
+        await _do_login(url_gemini, "Gemini")
+
+    if not adobe_ok or not gemini_ok:
+        log.info("🔍 Re-vérification post-login…")
+        if not adobe_ok:
+            ok2 = await _check_session(url_adobe, ["auth.adobe.com", "account.adobe.com", "adobeid"])
+            if not ok2:
+                log.error("⛔ Session Adobe toujours invalide après login — pipeline peut échouer.")
+        if not gemini_ok:
+            ok2 = await _check_session(url_gemini, ["accounts.google.com"])
+            if not ok2:
+                log.error("⛔ Session Gemini toujours invalide après login — génération images désactivée.")
+
 
 async def _gemini_generate_image(prompt: str, output_path: str) -> bool:
     """
@@ -2321,6 +2424,7 @@ def main():
     Traite exactement UNE vidéo (Download.mp4) et sort.
     La gestion de la file d'attente est faite par auto_scheduler.py.
     """
+    asyncio.run(ensure_sessions())
     try:
         done, status = run_pipeline_once()
         if done and status == "posted":
