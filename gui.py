@@ -1164,37 +1164,226 @@ def main(page: ft.Page):
         _open_dialog(dlg)
 
     def show_stats(e=None):
-        toast("Chargement des stats...", "info")
-        def do():
-            r = subprocess.run(
-                [PYTHON, str(BASE_DIR / "tiktok" / "fetch_stats.py"), "--report"],
-                cwd=str(BASE_DIR), capture_output=True, text=True,
-                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
-            )
-            output = (r.stdout or r.stderr or "Aucune donnée disponible.").strip()
+        if not HISTORY_FILE.exists():
+            toast("Aucun historique d'upload trouvé", "warning")
+            return
+        try:
+            history = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            toast("Erreur lecture historique", "error")
+            return
 
-            def show():
-                dlg = ft.AlertDialog(
-                    title=ft.Text("Stats TikTok", size=16, weight=ft.FontWeight.BOLD),
-                    content=ft.Container(
-                        content=ft.ListView(
-                            controls=[
-                                ft.Text(output, size=11, font_family="Cascadia Code",
-                                        selectable=True, color=ON_SURFACE),
-                            ],
-                            expand=True,
+        from collections import defaultdict
+        import datetime as _dt
+
+        today = _dt.date.today()
+
+        # ── Métriques ────────────────────────────────────────────────────────
+        ok_entries   = [e for e in history if e.get("upload_ok")]
+        fail_entries = [e for e in history if not e.get("upload_ok")]
+        total        = len(history)
+        total_ok     = len(ok_entries)
+        pct_ok       = int(total_ok / total * 100) if total else 0
+        with_stats   = [e for e in ok_entries if e.get("view_count") is not None]
+        total_views  = sum(e.get("view_count") or 0 for e in with_stats)
+        active_days  = len({e["timestamp"][:10] for e in ok_entries if e.get("timestamp")})
+
+        # Uploads par jour — 30 derniers jours
+        days_range = [today - _dt.timedelta(days=i) for i in range(29, -1, -1)]
+        by_day: dict = defaultdict(int)
+        for e in ok_entries:
+            by_day[e.get("timestamp", "")[:10]] += 1
+        day_counts = [by_day[d.isoformat()] for d in days_range]
+        max_day    = max(day_counts, default=1) or 1
+
+        # Par template
+        by_template: dict = defaultdict(int)
+        for e in ok_entries:
+            tmpl = (e.get("prompt_template") or "(inconnu)").replace(".txt", "")
+            by_template[tmpl] += 1
+        sorted_templates = sorted(by_template.items(), key=lambda x: x[1], reverse=True)
+        max_tmpl = sorted_templates[0][1] if sorted_templates else 1
+
+        # ── KPI cards ────────────────────────────────────────────────────────
+        def _kpi(icon, label, value, color=PRIMARY, sub=None):
+            return ft.Container(
+                content=ft.Column([
+                    ft.Row([ft.Icon(icon, size=13, color=color),
+                            ft.Text(label, size=9, color=MUTED)], spacing=5),
+                    ft.Text(str(value), size=22, weight=ft.FontWeight.BOLD, color=color),
+                    ft.Text(sub, size=9, color=OUTLINE) if sub else ft.Container(height=2),
+                ], spacing=3, tight=True),
+                bgcolor=SURFACE_HIGH, border=ft.Border.all(1, BORDER),
+                border_radius=10, padding=12, expand=True,
+            )
+
+        kpi_row = ft.Row([
+            _kpi(ft.Icons.UPLOAD_FILE, "UPLOADS", total_ok, PRIMARY,
+                 f"{len(fail_entries)} échec(s)"),
+            _kpi(ft.Icons.VERIFIED, "SUCCÈS", f"{pct_ok}%", SUCCESS),
+            _kpi(ft.Icons.CALENDAR_MONTH, "JOURS ACTIFS", active_days, ACCENT),
+            _kpi(ft.Icons.VISIBILITY_OUTLINED, "VUES TOTALES",
+                 f"{total_views:,}" if with_stats else "—", WARN_C,
+                 f"{len(with_stats)} vidéos trackées" if with_stats else "stats en attente"),
+        ], spacing=8)
+
+        # ── Activity bar chart ────────────────────────────────────────────────
+        BAR_H, BAR_W = 44, 17
+        bars = []
+        for d, cnt in zip(days_range, day_counts):
+            h     = max(3, int(cnt / max_day * BAR_H)) if cnt else 3
+            color = ACCENT if d == today else (PRIMARY if cnt > 0 else SURFACE_TOP)
+            bars.append(ft.Column([
+                ft.Container(
+                    width=BAR_W, height=h, bgcolor=color,
+                    border_radius=3,
+                    tooltip=f"{d.strftime('%d %b')}: {cnt}",
+                ),
+            ], alignment=ft.MainAxisAlignment.END,
+               horizontal_alignment=ft.CrossAxisAlignment.CENTER))
+
+        def _dlabel(d):
+            return ft.Text(d.strftime("%d/%m"), size=8, color=OUTLINE)
+
+        activity_section = ft.Column([
+            ft.Row([
+                ft.Text("ACTIVITÉ — 30 DERNIERS JOURS",
+                        size=9, weight=ft.FontWeight.BOLD, color=MUTED),
+                ft.Container(expand=True),
+                ft.Text(f"max {max_day}/j", size=9, color=OUTLINE),
+            ]),
+            ft.Container(content=ft.Row(bars, spacing=2), height=BAR_H + 4),
+            ft.Row([_dlabel(days_range[0]), ft.Container(expand=True),
+                    _dlabel(days_range[14]),  ft.Container(expand=True),
+                    _dlabel(days_range[-1])]),
+        ], spacing=4)
+
+        # ── Template bars ─────────────────────────────────────────────────────
+        tmpl_items = []
+        for tmpl, cnt in sorted_templates[:7]:
+            fill = int(cnt / max_tmpl * 270)
+            tmpl_items.append(ft.Column([
+                ft.Row([
+                    ft.Text(tmpl[:26], size=10, color=ON_SURFACE, expand=True),
+                    ft.Text(str(cnt), size=10, color=PRIMARY,
+                            weight=ft.FontWeight.BOLD, width=20,
+                            text_align=ft.TextAlign.RIGHT),
+                ]),
+                ft.Row([
+                    ft.Container(width=fill, height=4, bgcolor=ACCENT, border_radius=2),
+                    ft.Container(width=270 - fill, height=4,
+                                 bgcolor=SURFACE_TOP, border_radius=2),
+                ], spacing=0),
+            ], spacing=3, tight=True))
+
+        prompt_col = ft.Column([
+            ft.Text("PROMPTS UTILISÉS", size=9, weight=ft.FontWeight.BOLD, color=MUTED),
+            ft.Container(height=2),
+            *tmpl_items,
+        ], spacing=8)
+
+        # ── Top vidéos ────────────────────────────────────────────────────────
+        if with_stats:
+            top = sorted(with_stats,
+                         key=lambda e: e.get("view_count") or 0, reverse=True)[:5]
+            vid_items = []
+            for i, e in enumerate(top, 1):
+                tmpl  = (e.get("prompt_template") or "?").replace(".txt", "")[:18]
+                views = e.get("view_count") or 0
+                likes = e.get("like_count") or 0
+                vid_items.append(ft.Container(
+                    content=ft.Row([
+                        ft.Text(f"#{i}", size=10, color=MUTED, width=18),
+                        ft.Text(e.get("timestamp", "")[:10], size=9,
+                                color=OUTLINE, width=72, font_family="Cascadia Code"),
+                        ft.Text(tmpl, size=10, color=ON_SURFACE, expand=True),
+                        ft.Text(f"{views:,}", size=10, color=PRIMARY),
+                        ft.Text(f"♥ {likes:,}", size=9, color=ERROR_C),
+                    ], spacing=6),
+                    bgcolor=SURFACE_HIGH, border_radius=6,
+                    padding=ft.Padding.symmetric(horizontal=8, vertical=6),
+                ))
+            video_col = ft.Column([
+                ft.Text("TOP 5 VIDÉOS", size=9,
+                        weight=ft.FontWeight.BOLD, color=MUTED),
+                ft.Container(height=2),
+                *vid_items,
+            ], spacing=5)
+        else:
+            video_col = ft.Column([
+                ft.Text("TOP VIDÉOS", size=9,
+                        weight=ft.FontWeight.BOLD, color=MUTED),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.Icons.HOURGLASS_EMPTY, size=28, color=OUTLINE),
+                        ft.Text("Stats TikTok non disponibles.",
+                                size=11, color=OUTLINE,
+                                text_align=ft.TextAlign.CENTER),
+                        ft.Text(
+                            "Publie les vidéos depuis la boîte TikTok\n"
+                            "puis clique Actualiser.",
+                            size=10, color=MUTED, text_align=ft.TextAlign.CENTER,
                         ),
-                        width=640, height=420,
-                        bgcolor=SURFACE_TOP,
-                        border_radius=8,
-                        padding=12,
-                    ),
-                    actions=[ft.TextButton("Fermer", on_click=lambda ev: _close_dialog(dlg))],
-                    actions_alignment=ft.MainAxisAlignment.END,
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6),
+                    alignment=ft.Alignment.CENTER,
+                    bgcolor=SURFACE_HIGH, border_radius=10,
+                    padding=20,
+                ),
+            ], spacing=8)
+
+        # ── Dialog ───────────────────────────────────────────────────────────
+        dlg_ref = {"v": None}
+
+        def on_refresh(ev):
+            if dlg_ref["v"]:
+                _close_dialog(dlg_ref["v"])
+            toast("Actualisation des stats...", "info")
+            def do():
+                subprocess.run(
+                    [PYTHON, str(BASE_DIR / "tiktok" / "fetch_stats.py"), "--update-only"],
+                    cwd=str(BASE_DIR), capture_output=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
                 )
-                _open_dialog(dlg)
-            page.run_thread(show)
-        threading.Thread(target=do, daemon=True).start()
+                page.run_thread(show_stats)
+            threading.Thread(target=do, daemon=True).start()
+
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Row([
+                ft.Icon(ft.Icons.BAR_CHART, color=PRIMARY, size=20),
+                ft.Text("Dashboard TikTok", size=15,
+                        weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(
+                    ft.Icons.REFRESH, icon_color=MUTED, icon_size=18,
+                    tooltip="Actualiser les stats depuis TikTok",
+                    on_click=on_refresh,
+                ),
+            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            content=ft.Container(
+                content=ft.Column([
+                    kpi_row,
+                    ft.Divider(height=1, color=BORDER),
+                    activity_section,
+                    ft.Divider(height=1, color=BORDER),
+                    ft.Row([
+                        ft.Container(content=prompt_col, width=300),
+                        ft.Container(width=1, bgcolor=BORDER),
+                        ft.Container(content=video_col, expand=True,
+                                     padding=ft.Padding.only(left=16)),
+                    ], spacing=0,
+                       vertical_alignment=ft.CrossAxisAlignment.START),
+                ], spacing=14, scroll=ft.ScrollMode.AUTO),
+                width=720, height=520,
+                padding=ft.Padding.symmetric(vertical=4),
+            ),
+            actions=[
+                ft.TextButton("Fermer", on_click=lambda ev: _close_dialog(dlg)),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+            bgcolor=SURFACE,
+        )
+        dlg_ref["v"] = dlg
+        _open_dialog(dlg)
 
     def show_upload_history(e=None):
         if not HISTORY_FILE.exists():
