@@ -31,8 +31,8 @@ HISTORY_FILE           = BASE_DIR / "upload_history.json"
 MATCHING_MODE_FILE     = BASE_DIR / "matching_mode.json"
 MATCHING_REQUEST_FILE  = BASE_DIR / "matching_request.json"
 MATCHING_RESPONSE_FILE = BASE_DIR / "matching_response.json"
-GUI_CONFIG_FILE        = BASE_DIR / "gui_config.json"
-SCRAPER_CONFIG_FILE    = BASE_DIR / "scraper_config.json"
+GUI_CONFIG_FILE        = BASE_DIR / "config" / "gui_config.json"
+SCRAPER_CONFIG_FILE    = BASE_DIR / "config" / "scraper_config.json"
 ACCOUNTS_FILE          = BASE_DIR / "config" / "tiktok_accounts.json"
 PIPELINE_STATE_FILE    = BASE_DIR / "pipeline_state.json"
 VENV_PYTHON = BASE_DIR / "venv" / "Scripts" / "python.exe"
@@ -92,9 +92,9 @@ def main(page: ft.Page):
     page.window.min_height = 700
 
     # Icon — .ico en priorité pour la barre des tâches Windows
-    ico = BASE_DIR / "app_icon.ico"
+    ico = BASE_DIR / "assets" / "app_icon.ico"
     if not ico.exists():
-        ico = BASE_DIR / "app_icon.png"
+        ico = BASE_DIR / "assets" / "app_icon.png"
     if ico.exists():
         page.window.icon = str(ico)
 
@@ -418,10 +418,7 @@ def main(page: ft.Page):
             log_list.controls = log_list.controls[-MAX_LOG_ENTRIES:]
         if added:
             _set_placeholder(False)
-            try:
-                log_list.scroll_to(offset=float("inf"), duration=100)
-            except Exception:
-                pass
+        return added
 
     def _start_action_log(action_name: str):
         """Bascule le panel de log vers une action manuelle."""
@@ -775,7 +772,7 @@ def main(page: ft.Page):
                     if _a.get("id") == _active_id:
                         _active_tok = (_a.get("access_token") or "").strip()
                         break
-            _post_cmd = [PYTHON, "-u", "post_tiktok_inbox.py", "--video", str(vp), "--poll"]
+            _post_cmd = [PYTHON, "-u", str(BASE_DIR / "pipeline" / "post_tiktok_inbox.py"), "--video", str(vp), "--poll"]
             if _active_tok:
                 _post_cmd += ["--token", _active_tok]
             proc = subprocess.Popen(
@@ -1170,7 +1167,7 @@ def main(page: ft.Page):
         toast("Chargement des stats...", "info")
         def do():
             r = subprocess.run(
-                [PYTHON, "fetch_stats.py", "--report"],
+                [PYTHON, str(BASE_DIR / "tiktok" / "fetch_stats.py"), "--report"],
                 cwd=str(BASE_DIR), capture_output=True, text=True,
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
@@ -1636,7 +1633,7 @@ def main(page: ft.Page):
         def do():
             page.run_thread(lambda: _start_action_log("Connexion nouveau compte TikTok"))
             proc = subprocess.Popen(
-                [PYTHON, "auth_tiktok_token_manager.py"], cwd=str(BASE_DIR),
+                [PYTHON, str(BASE_DIR / "tiktok" / "auth_tiktok_token_manager.py")], cwd=str(BASE_DIR),
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, bufsize=1, creationflags=_no_win,
             )
@@ -1687,7 +1684,7 @@ def main(page: ft.Page):
         def do():
             page.run_thread(lambda: _start_action_log(f"Refresh token ({account_arg})"))
             proc = subprocess.Popen(
-                [PYTHON, "auth_tiktok_refresh.py", "--account", account_arg],
+                [PYTHON, str(BASE_DIR / "tiktok" / "auth_tiktok_refresh.py"), "--account", account_arg],
                 cwd=str(BASE_DIR),
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, bufsize=1, creationflags=_no_win,
@@ -1703,7 +1700,7 @@ def main(page: ft.Page):
                 page.run_thread(lambda: _append_log_lines(
                     ["[INFO] Refresh échoué — ouverture navigateur pour re-auth..."]))
                 proc2 = subprocess.Popen(
-                    [PYTHON, "auth_tiktok_token_manager.py"], cwd=str(BASE_DIR),
+                    [PYTHON, str(BASE_DIR / "tiktok" / "auth_tiktok_token_manager.py")], cwd=str(BASE_DIR),
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, bufsize=1, creationflags=_no_win,
                 )
@@ -2027,7 +2024,7 @@ def main(page: ft.Page):
 
             # ── Comptes TikTok ──────────────────────────────
             ft.Container(
-                content=ft.Text("COMPTES", size=9, weight=ft.FontWeight.BOLD, color=OUTLINE, letter_spacing=1.5),
+                content=ft.Text("COMPTES", size=9, weight=ft.FontWeight.BOLD, color=OUTLINE),
                 padding=ft.Padding.only(top=12, bottom=6, left=2),
             ),
             accounts_col,
@@ -2061,7 +2058,7 @@ def main(page: ft.Page):
 
             # ── Automatisation ──────────────────────────────
             ft.Container(
-                content=ft.Text("AUTOMATISATION", size=9, weight=ft.FontWeight.BOLD, color=OUTLINE, letter_spacing=1.5),
+                content=ft.Text("AUTOMATISATION", size=9, weight=ft.FontWeight.BOLD, color=OUTLINE),
                 padding=ft.Padding.only(top=12, bottom=8, left=2),
             ),
             ft.Row([start_btn, stop_btn], spacing=8),
@@ -2073,7 +2070,7 @@ def main(page: ft.Page):
 
             # ── Actions ─────────────────────────────────────
             ft.Container(
-                content=ft.Text("ACTIONS", size=9, weight=ft.FontWeight.BOLD, color=OUTLINE, letter_spacing=1.5),
+                content=ft.Text("ACTIONS", size=9, weight=ft.FontWeight.BOLD, color=OUTLINE),
                 padding=ft.Padding.only(top=12, bottom=4, left=2),
             ),
             _nav_btn(ft.Icons.SEARCH, "Scraper des vidéos", "Télécharge depuis TikTok", run_scraper),
@@ -2084,7 +2081,7 @@ def main(page: ft.Page):
 
             # ── Outils ──────────────────────────────────────
             ft.Container(
-                content=ft.Text("OUTILS", size=9, weight=ft.FontWeight.BOLD, color=OUTLINE, letter_spacing=1.5),
+                content=ft.Text("OUTILS", size=9, weight=ft.FontWeight.BOLD, color=OUTLINE),
                 padding=ft.Padding.only(top=12, bottom=4, left=2),
             ),
             _nav_btn(ft.Icons.BAR_CHART, "Stats TikTok", "Performances par prompt", show_stats),
@@ -2094,7 +2091,7 @@ def main(page: ft.Page):
 
             # ── Maintenance ──────────────────────────────────
             ft.Container(
-                content=ft.Text("MAINTENANCE", size=9, weight=ft.FontWeight.BOLD, color=OUTLINE, letter_spacing=1.5),
+                content=ft.Text("MAINTENANCE", size=9, weight=ft.FontWeight.BOLD, color=OUTLINE),
                 padding=ft.Padding.only(top=12, bottom=4, left=2),
             ),
             _nav_btn(ft.Icons.RESTART_ALT, "Reset quota", "Remet le compteur à zéro", reset_quota),
@@ -2181,6 +2178,12 @@ def main(page: ft.Page):
                     needs_update = True
                 if needs_update:
                     page.update()
+                if changed:
+                    try:
+                        log_list.scroll_to(offset=float("inf"), duration=0)
+                        page.update()
+                    except Exception:
+                        pass
             except Exception:
                 pass
 

@@ -32,6 +32,8 @@ from tqdm import tqdm
 from openai import OpenAI
 import openai
 
+sys.path.insert(0, str(Path(__file__).parent / "pipeline"))
+sys.path.insert(0, str(Path(__file__).parent / "tiktok"))
 from automate_adobe_with_bg import Task, run_pool, _safe_filename
 from assemble_guarded import assemble_from_tail_with_transcript
 from segments_processing import (
@@ -433,7 +435,7 @@ def _detect_token_issue(blob: str) -> bool:
 
 def _refresh_token_ok(python_exe: str, log_path: Path) -> bool:
     """Lance auth_tiktok_refresh.py et retourne True si le refresh a réussi."""
-    rc, out, err = run_cmd_capture([python_exe, "auth_tiktok_refresh.py"], log_path)
+    rc, out, err = run_cmd_capture([python_exe, str(Path(__file__).parent / "tiktok" / "auth_tiktok_refresh.py")], log_path)
     if rc != 0:
         blob = (out + "\n" + err).lower()
         if "refresh" in blob and ("expir" in blob or "invalid" in blob or "introuvable" in blob):
@@ -502,7 +504,7 @@ def _upload_with_account(
     label = get_account_label(account_id)
 
     def _post(direct: bool = False, tok: str = token):
-        cmd = [python_exe, "post_tiktok_inbox.py", "--video", final_mp4, "--poll",
+        cmd = [python_exe, str(Path(__file__).parent / "pipeline" / "post_tiktok_inbox.py"), "--video", final_mp4, "--poll",
                "--token", tok]
         if direct and caption:
             cmd.extend(["--direct", "--caption", caption])
@@ -539,7 +541,7 @@ def _upload_with_account(
     # Token invalide → refresh + retry
     if _detect_token_issue(blob):
         log.warning(f"🔐 Token invalide ({label}) → rafraîchissement…")
-        refresh_cmd = [python_exe, "auth_tiktok_refresh.py", "--account", account_id]
+        refresh_cmd = [python_exe, str(Path(__file__).parent / "tiktok" / "auth_tiktok_refresh.py"), "--account", account_id]
         rc_r, _, _ = run_cmd_capture(refresh_cmd, log_path)
         if rc_r != 0:
             log.error(f"⛔ Refresh échoué pour {label}")

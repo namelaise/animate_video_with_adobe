@@ -4,7 +4,11 @@
 # Dossiers Python
 __pycache__/
 *.py[cod]
-config/
+
+# Fichiers sensibles dans config/ (tokens OAuth, données comptes)
+config/tiktok_tokens*.json
+config/tiktok_accounts.json
+config/avatars/
 
 # Fichiers temporaires / logs
 *.log

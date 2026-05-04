@@ -40,7 +40,7 @@ load_dotenv()
 # --- Config depuis .env
 BASE_PROFILE_PATH = os.getenv("BASE_PROFILE_PATH")
 CHROME_PATH = os.getenv("CHROME_PATH")
-BASE_DIR = os.getenv("BASE_DIR", ".")
+BASE_DIR = os.getenv("BASE_DIR", str(Path(__file__).parent.parent))
 URL_ADOBE = os.getenv("URL_ADOBE")
 IMAGE_LEFT_PATH = os.getenv("IMAGE_LEFT_PATH")
 IMAGE_RIGHT_PATH = os.getenv("IMAGE_RIGHT_PATH")

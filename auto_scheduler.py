@@ -17,6 +17,8 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+sys.path.insert(0, str(Path(__file__).parent / "pipeline"))
+sys.path.insert(0, str(Path(__file__).parent / "tiktok"))
 from scraper_tiktok import scrape_accounts, DEFAULT_ACCOUNTS, DEFAULT_DAILY_LIMIT, get_daily_count
 
 
@@ -324,7 +326,7 @@ def generation_loop():
 def post_video(final_mp4, poll=True, extra_args=None, timeout=30*60):
     """Lance post_tiktok_inbox.py en streaming console + fichier log."""
     final_mp4 = str(Path(final_mp4))
-    script = os.path.join(BASE_DIR, "post_tiktok_inbox.py")
+    script = os.path.join(BASE_DIR, "pipeline", "post_tiktok_inbox.py")
 
     cmd = [
         PYTHON_EXE,
