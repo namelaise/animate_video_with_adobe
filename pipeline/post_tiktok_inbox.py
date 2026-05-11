@@ -108,31 +108,86 @@ def build_post_info(args, creator_info: dict | None = None) -> dict | None:
     """
     Construit le bloc post_info pour un POST DIRECT.
     Valide le privacy_level contre les options retournées par creator_info (obligatoire).
+    Pour la conformité TikTok :
+      - L'utilisateur DOIT avoir sélectionné explicitement privacy (pas de default)
+      - disable_comment/duet/stitch = NOT allow_X (off par défaut)
+      - Toujours désactivé si le créateur l'a désactivé côté app
     """
     if not args.direct:
         return None
 
     privacy = args.privacy
+    if not privacy:
+        raise SystemExit("[ERR] --privacy obligatoire en mode DIRECT (conformité TikTok : pas de valeur par défaut).")
+
     if creator_info:
         allowed = creator_info.get("privacy_level_options", [])
         if allowed and privacy not in allowed:
-            log(f"Privacy '{privacy}' non disponible pour ce compte (options: {allowed}), fallback sur '{allowed[0]}'")
-            privacy = allowed[0]
+            raise SystemExit(f"[ERR] Privacy '{privacy}' non autorisée pour ce compte. Options: {allowed}")
+
+    # Interaction : si --allow-X passé ET le créateur ne l'a pas désactivé → autorisé
+    creator_comment_disabled = bool(creator_info and creator_info.get("comment_disabled"))
+    creator_duet_disabled    = bool(creator_info and creator_info.get("duet_disabled"))
+    creator_stitch_disabled  = bool(creator_info and creator_info.get("stitch_disabled"))
+
+    disable_comment = creator_comment_disabled or (not args.allow_comment)
+    disable_duet    = creator_duet_disabled    or (not args.allow_duet)
+    disable_stitch  = creator_stitch_disabled  or (not args.allow_stitch)
 
     pi: dict = {
         "privacy_level": privacy,
+        "disable_comment": disable_comment,
+        "disable_duet": disable_duet,
+        "disable_stitch": disable_stitch,
     }
     if args.caption:
         pi["title"] = args.caption[:2200]  # max 2200 UTF-16 runes
-    if args.disable_duet or (creator_info and creator_info.get("duet_disabled")):
-        pi["disable_duet"] = True
-    if args.disable_stitch or (creator_info and creator_info.get("stitch_disabled")):
-        pi["disable_stitch"] = True
-    if args.disable_comment or (creator_info and creator_info.get("comment_disabled")):
-        pi["disable_comment"] = True
+
+    # Disclosure commercial content
+    if args.brand_organic:
+        pi["brand_organic_toggle"] = True
+    if args.brand_content:
+        pi["brand_content_toggle"] = True
+        # Règle TikTok : branded content ne peut pas être SELF_ONLY
+        if privacy == "SELF_ONLY":
+            raise SystemExit("[ERR] Branded Content ne peut pas être posté en SELF_ONLY (règle TikTok).")
+
     if args.cover_ms is not None:
         pi["video_cover_timestamp_ms"] = args.cover_ms
     return pi
+
+
+def _check_video_duration(video_path: Path, creator_info: dict) -> None:
+    """Vérifie que la durée de la vidéo ne dépasse pas max_video_post_duration_sec."""
+    max_dur = creator_info.get("max_video_post_duration_sec", 0)
+    if not max_dur:
+        return
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
+            capture_output=True, text=True, timeout=30,
+        )
+        duration = float((result.stdout or "0").strip())
+    except Exception as e:
+        log(f"Impossible de mesurer la durée vidéo via ffprobe ({e}), check ignoré.")
+        return
+    if duration > max_dur:
+        raise SystemExit(
+            f"[ERR] Vidéo trop longue ({duration:.1f}s) pour ce créateur "
+            f"(max autorisé : {max_dur}s)."
+        )
+    log(f"Durée vidéo : {duration:.1f}s (max créateur : {max_dur}s) ✓")
+
+
+def _check_creator_can_post(creator_info: dict) -> None:
+    """Stoppe si le créateur a atteint sa limite de posts ou ne peut pas poster."""
+    # TikTok renvoie une clé status ou un message d'erreur dans creator_info
+    if creator_info.get("status") == "user_quota_exceeded":
+        raise SystemExit("[ERR] Le créateur a atteint sa limite de posts pour les 24h. Réessaie plus tard.")
+    # Certains comptes retournent un flag explicite
+    if creator_info.get("can_post") is False:
+        raise SystemExit("[ERR] Ce créateur ne peut pas poster pour le moment.")
 
 def _raise_if_token_invalid(resp: requests.Response):
     # TikTok renvoie HTTP 401/403 avec divers codes d'erreur
@@ -291,12 +346,21 @@ def main():
     # Options de publication directe
     ap.add_argument("--direct", action="store_true", help="Poster directement (sinon: upload en brouillon Inbox)")
     ap.add_argument("--caption", type=str, default=None, help="Légende/description du post (Direct Post uniquement)")
-    ap.add_argument("--privacy", type=str, default="SELF_ONLY",
+    ap.add_argument("--privacy", type=str, default=None,
                     choices=["PUBLIC_TO_EVERYONE","MUTUAL_FOLLOW_FRIENDS","FOLLOWER_OF_CREATOR","SELF_ONLY"],
-                    help="Niveau de visibilité (Direct Post). Par défaut SELF_ONLY.")
-    ap.add_argument("--disable-duet", dest="disable_duet", action="store_true", help="Désactiver Duet (Direct Post)")
-    ap.add_argument("--disable-stitch", dest="disable_stitch", action="store_true", help="Désactiver Stitch (Direct Post)")
-    ap.add_argument("--disable-comment", dest="disable_comment", action="store_true", help="Désactiver les commentaires (Direct Post)")
+                    help="Niveau de visibilité (Direct Post). Aucune valeur par défaut (conformité TikTok).")
+    # Interactions : OFF par défaut, l'utilisateur DOIT cocher pour activer
+    ap.add_argument("--allow-comment", dest="allow_comment", action="store_true",
+                    help="Autoriser les commentaires (Direct Post). OFF par défaut.")
+    ap.add_argument("--allow-duet", dest="allow_duet", action="store_true",
+                    help="Autoriser les Duets (Direct Post). OFF par défaut.")
+    ap.add_argument("--allow-stitch", dest="allow_stitch", action="store_true",
+                    help="Autoriser les Stitch (Direct Post). OFF par défaut.")
+    # Commercial content disclosure
+    ap.add_argument("--brand-organic", dest="brand_organic", action="store_true",
+                    help="Ton propre contenu promotionnel (Brand Organic).")
+    ap.add_argument("--brand-content", dest="brand_content", action="store_true",
+                    help="Contenu sponsorisé par une marque tierce (Branded Content / Paid Partnership).")
     ap.add_argument("--cover-ms", dest="cover_ms", type=int, default=None,
                     help="Timestamp (ms) pour choisir la vignette (Direct Post)")
 
@@ -332,10 +396,8 @@ def main():
     if args.direct:
         try:
             creator_info = query_creator_info(token)
-            max_dur = creator_info.get("max_video_post_duration_sec", 0)
-            if max_dur and total_size > 0:
-                # Vérification informative de la durée (on n'a pas la durée exacte ici)
-                log(f"Durée max autorisée par le créateur: {max_dur}s")
+            _check_creator_can_post(creator_info)
+            _check_video_duration(video_path, creator_info)
         except ScopeNotAuthorized:
             err("scope video.publish non autorisé — relance auth_tiktok_token_manager.py avec le nouveau scope")
             raise SystemExit(2)

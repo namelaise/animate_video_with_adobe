@@ -394,6 +394,43 @@ def post_video(final_mp4, poll=True, extra_args=None, timeout=30*60):
         return False
 
 
+def scheduled_posting_loop():
+    """
+    Vérifie toutes les 60s les posts programmés via post_scheduler.
+    Publie les posts dont l'heure est atteinte, marque posted/failed.
+    """
+    import json as _json
+    from post_scheduler import get_due, mark_posted, mark_failed
+
+    SCHEDULED_CHECK_INTERVAL = 60  # secondes
+
+    while True:
+        try:
+            due = get_due()
+            for entry in due:
+                post_id    = entry.get("id", "?")
+                video_path = entry.get("video_path", "")
+                title      = entry.get("title", video_path)
+
+                if not os.path.isfile(video_path):
+                    log.warning(f"[scheduler] Post programmé {post_id} : fichier introuvable ({video_path}) — annulé")
+                    mark_failed(post_id, "fichier_introuvable")
+                    continue
+
+                log.info(f"[scheduler] Publication programmée : {title}")
+                wait_for_internet(poll_every=10)
+                ok = post_video(video_path)
+                if ok:
+                    mark_posted(post_id)
+                    log.info(f"[scheduler] Post {post_id} publié avec succès")
+                else:
+                    mark_failed(post_id, "post_tiktok_failed")
+                    log.warning(f"[scheduler] Post {post_id} échoué")
+        except Exception:
+            log.exception("[scheduler] Erreur dans scheduled_posting_loop")
+        time.sleep(SCHEDULED_CHECK_INTERVAL)
+
+
 def posting_loop():
     while True:
         try:
@@ -485,11 +522,11 @@ if __name__ == '__main__':
 
     t0 = threading.Thread(target=scrape_loop, daemon=True)
     t1 = threading.Thread(target=generation_loop, daemon=True)
-    t2 = threading.Thread(target=posting_loop, daemon=True)
+    t3 = threading.Thread(target=scheduled_posting_loop, daemon=True)
     t0.start()
     t1.start()
-    # t2.start()
-    log.info('auto_scheduler demarré (scraping + generation). Appuyez sur Ctrl+C pour quitter.')
+    t3.start()
+    log.info('auto_scheduler demarré (scraping + generation + publications programmées). Appuyez sur Ctrl+C pour quitter.')
     try:
         while True:
             time.sleep(1)
