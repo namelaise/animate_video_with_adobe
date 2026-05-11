@@ -213,11 +213,11 @@
     <h2>3. Information the App Accesses</h2>
     <p>When a user connects their TikTok account, the App accesses the following data through the TikTok API, solely on behalf of that authenticated user:</p>
     <ul>
-      <li><strong>Basic profile information</strong> (open_id, display name, avatar URL) — used to identify the connected account within the App interface.</li>
-      <li><strong>OAuth access and refresh tokens</strong> — used to authenticate API requests on behalf of the user. Stored locally on the user's own device.</li>
-      <li><strong>Creator account settings</strong> (privacy level options, interaction preferences) — queried before each post to ensure compliance with the user's account settings.</li>
-      <li><strong>Published video metadata</strong> (titles, view counts, like counts, share counts, comment counts) — accessed via the Video Query API to display performance analytics to the authenticated user within the App only.</li>
-      <li><strong>Account statistics</strong> (follower count, following count, total likes, video count) — displayed to the authenticated user for content performance monitoring.</li>
+      <li><strong>Basic profile information</strong> (open_id, display name, username, avatar URL) — used to identify the connected account within the App interface.</li>
+      <li><strong>OAuth access and refresh tokens</strong> (including expiration timestamps and granted scopes) — used to authenticate API requests on behalf of the user. Stored locally on the user's own device.</li>
+      <li><strong>Creator account settings</strong> (privacy level options, comment/duet/stitch preferences, max video duration) — queried in real-time before each post to ensure compliance with the user's account settings. Not persisted to local storage.</li>
+      <li><strong>Publish operation identifiers</strong> (publish_id) — saved locally for status tracking and to correlate publish operations with later video performance data.</li>
+      <li><strong>Published video performance data</strong> (video id, view count, like count, comment count, share count) — accessed via the Display API (video.list scope) to display analytics for the authenticated user's own videos within the App's dashboard only.</li>
     </ul>
 
     <h2>4. How We Use This Information</h2>
@@ -238,7 +238,7 @@
     <ul>
       <li><strong>TikTok Login Kit</strong> — for OAuth authentication</li>
       <li><strong>TikTok Content Posting API</strong> — to publish videos to the user's profile</li>
-      <li><strong>TikTok Video Query API</strong> — to retrieve the user's own video performance data for in-app analytics</li>
+      <li><strong>TikTok Display API (video.list scope)</strong> — to retrieve the user's own video performance data for in-app analytics</li>
       <li><strong>AssemblyAI</strong> — for audio transcription (audio data is sent to their API; governed by AssemblyAI's privacy policy)</li>
       <li><strong>OpenAI</strong> — for AI-generated captions (text data is sent to their API; governed by OpenAI's privacy policy)</li>
     </ul>

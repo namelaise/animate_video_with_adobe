@@ -386,7 +386,8 @@ def stash_unposted_videos(
     base_dir: str,
     raw_video_path: str,
     final_video_path: str,
-    reason: str = "tiktok_failed"
+    reason: str = "tiktok_failed",
+    caption: str | None = None,
 ) -> Path:
     pending_root = Path(base_dir) / "pending_posts"
     dest_dir = next_indexed_dir(pending_root, prefix="Video_")
@@ -398,6 +399,13 @@ def stash_unposted_videos(
         "final_video_src": final_video_path,
     }
     (dest_dir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    if caption:
+        try:
+            (dest_dir / "caption.txt").write_text(caption, encoding="utf-8")
+            log.info(f"📝 Caption sauvée dans {dest_dir / 'caption.txt'}")
+        except Exception as e:
+            log.error(f"❌ Impossible d'écrire caption.txt: {e}")
 
     if raw_video_path and os.path.exists(raw_video_path):
         dst_raw = dest_dir / Path(raw_video_path).name
@@ -498,43 +506,29 @@ def _upload_with_account(
     caption: str | None,
 ) -> Tuple[bool, str]:
     """
-    Tente un upload pour un compte spécifique.
-    Retourne (success, reason).
+    Upload automatique = INBOX uniquement (conformité audit TikTok :
+    aucun post DIRECT sans consentement explicite de l'utilisateur).
+    Le post DIRECT se fait depuis le GUI via le dialog "Composer le post".
+    La caption générée est conservée pour réutilisation au moment du post manuel.
     """
     token = get_access_token(account_id)
-    use_direct = os.getenv("TIKTOK_DIRECT_POST", "0").strip() == "1"
     label = get_account_label(account_id)
 
-    def _post(direct: bool = False, tok: str = token):
-        cmd = [python_exe, str(Path(__file__).parent / "pipeline" / "post_tiktok_inbox.py"), "--video", final_mp4, "--poll",
-               "--token", tok]
-        if direct and caption:
-            cmd.extend(["--direct", "--caption", caption])
+    def _post(tok: str = token):
+        cmd = [python_exe, str(Path(__file__).parent / "pipeline" / "post_tiktok_inbox.py"),
+               "--video", final_mp4, "--poll", "--token", tok]
         return run_cmd_capture(cmd, log_path)
 
-    log.info(f"📤 Upload TikTok → {label} (compte {account_id})")
+    log.info(f"📤 Upload TikTok → {label} (compte {account_id}) — mode INBOX (auto)")
 
-    rc, out, err = _post(direct=use_direct and bool(caption))
+    rc, out, err = _post()
     if rc == 0:
-        mode = "DIRECT" if (use_direct and caption) else "INBOX"
-        log.info(f"✅ Upload TikTok OK ({mode}) — {label}")
+        log.info(f"✅ Upload TikTok OK (INBOX) — {label}")
         mark_account_used(account_id)
         save_upload_entry(_parse_publish_id(out), ok=True, reason="ok")
         return True, "ok"
 
     blob = out + "\n" + err
-
-    # scope_not_authorized → fallback INBOX
-    if _detect_scope_not_authorized(blob):
-        log.warning(f"⚠️ scope video.publish non autorisé ({label}) → fallback INBOX")
-        rc_fb, out_fb, _ = _post(direct=False)
-        if rc_fb == 0:
-            log.info(f"✅ Upload TikTok OK en mode INBOX (fallback) — {label}")
-            mark_account_used(account_id)
-            save_upload_entry(_parse_publish_id(out_fb), ok=True, reason="ok_inbox_fallback")
-            return True, "ok_inbox_fallback"
-        log.error(f"❌ Upload TikTok échoué même en INBOX ({label})")
-        return False, "other_failed"
 
     if _contains_spam_risk(blob):
         log.error(f"🚫 Upload TikTok refusé spam risk ({label}): {TIKTOK_SPAM_RISK_KEY}")
@@ -548,10 +542,9 @@ def _upload_with_account(
         if rc_r != 0:
             log.error(f"⛔ Refresh échoué pour {label}")
             return False, "token_failed"
-        # Recharger le token depuis le gestionnaire de comptes
         from tiktok_account_manager import get_access_token as _gat
         fresh_token = _gat(account_id)
-        rc2, out2, err2 = _post(direct=use_direct and bool(caption), tok=fresh_token)
+        rc2, out2, err2 = _post(tok=fresh_token)
         if rc2 == 0:
             log.info(f"✅ Upload TikTok OK après refresh — {label}")
             mark_account_used(account_id)
@@ -563,16 +556,7 @@ def _upload_with_account(
         log.error(f"⛔ Token toujours invalide après refresh ({label})")
         return False, "token_failed"
 
-    # Erreur inconnue → retry sans direct
-    log.warning(f"❌ Upload TikTok erreur inconnue ({label}). Retry…")
-    rc3, out3, err3 = _post(direct=False)
-    if rc3 == 0:
-        log.info(f"✅ Upload TikTok OK après retry ({label})")
-        mark_account_used(account_id)
-        save_upload_entry(_parse_publish_id(out3), ok=True, reason="ok")
-        return True, "ok"
-    if _contains_spam_risk(out3 + "\n" + err3):
-        return False, "spam_risk"
+    log.error(f"❌ Upload TikTok INBOX échoué ({label})")
     return False, "other_failed"
 
 
@@ -2411,7 +2395,8 @@ def run_pipeline_once() -> Tuple[bool, str]:
             base_dir=BASE_DIR,
             raw_video_path=RAW_VIDEO_PATH,
             final_video_path=VIDEO_FINALE_PATH,
-            reason=reason
+            reason=reason,
+            caption=caption,
         )
         with time_step(f"11) Nettoyage après échec TikTok ({reason})"):
             delete_outputs()

@@ -89,6 +89,26 @@ def main(page: ft.Page):
     )
     page.padding = 0
     page.bgcolor = BG
+
+    def _on_page_error(e):
+        msg = str(getattr(e, "data", e))[:120]
+        try:
+            sb = ft.SnackBar(
+                content=ft.Row([
+                    ft.Icon(ft.Icons.BUG_REPORT, color=ERROR_C, size=18),
+                    ft.Text(f"Erreur UI : {msg}", color="white", size=12, expand=True),
+                ], spacing=10),
+                bgcolor="#2d1a1a",
+                duration=6000,
+            )
+            page.overlay.append(sb)
+            sb.open = True
+            page.update()
+        except Exception:
+            pass
+
+    page.on_error = _on_page_error
+
     page.window.width = 1400
     page.window.height = 900
     page.window.min_width = 1000
@@ -752,7 +772,353 @@ def main(page: ft.Page):
 
     # refresh_token est maintenant refresh_token_active (défini dans le bloc accounts)
 
-    def post_video(vdir):
+    def _open_post_composer(vdir):
+        """
+        Dialog conforme aux exigences UX TikTok pour Direct Post (audit) :
+        - Affiche nickname du créateur
+        - Preview vidéo + durée
+        - Champ titre éditable
+        - Dropdown Privacy (peuplé depuis creator_info, sans valeur par défaut)
+        - Checkboxes Comment/Duet/Stitch (off par défaut, grisées si désactivées côté créateur)
+        - Toggle Commercial Content + Brand/Branded Content avec règles
+        - Déclaration légale dynamique
+        - Bouton Publier conditionnel (consentement explicite)
+        """
+        vp = vdir / "video_final.mp4"
+        if not vp.exists():
+            toast(f"Pas de video dans {vdir.name}", "error")
+            return
+
+        _pipeline_dir = str(BASE_DIR / "pipeline")
+        if _pipeline_dir not in sys.path:
+            sys.path.insert(0, _pipeline_dir)
+
+        try:
+            from tiktok_publish_helpers import (
+                query_creator_info, get_video_duration, get_video_dimensions,
+                extract_thumbnail, CreatorInfoError,
+            )
+        except Exception as ex:
+            toast(f"Helpers indisponibles: {ex}", "error")
+            return
+
+        # Token actif
+        _accounts_data, _active_id = _load_accounts_data()
+        _active_tok = ""
+        _active_label = "?"
+        if _active_id:
+            for _a in _accounts_data:
+                if _a.get("id") == _active_id:
+                    _active_tok = (_a.get("access_token") or "").strip()
+                    _active_label = _a.get("display_name") or _a.get("username") or _a.get("id")
+                    break
+        if not _active_tok:
+            toast("Aucun compte TikTok actif. Connecte-toi d'abord.", "error")
+            return
+
+        # ── État partagé du dialog ─────────────────────────────────────────
+        state = {
+            "creator_info": None,
+            "duration": None,
+            "thumb_path": None,
+            "dlg": None,
+        }
+
+        # ── Widgets : version "Chargement" affichée tout de suite ──────────
+        loading_text = ft.Text("Chargement des informations du créateur...",
+                               size=13, color=ON_SURFACE)
+        loading_spinner = ft.ProgressRing(width=24, height=24, color=ACCENT)
+        loading_content = ft.Column(
+            [ft.Row([loading_spinner, loading_text], spacing=12,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER)],
+            tight=True, height=80, alignment=ft.MainAxisAlignment.CENTER,
+        )
+
+        def _close():
+            if state["dlg"]:
+                state["dlg"].open = False
+                page.update()
+
+        dlg = ft.AlertDialog(
+            modal=False,
+            title=ft.Text("Publier sur TikTok", size=18, weight=ft.FontWeight.BOLD),
+            content=ft.Container(content=loading_content, width=560),
+            actions=[ft.TextButton("Annuler", on_click=lambda e: _close())],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        state["dlg"] = dlg
+        _open_dialog(dlg)
+
+        def _fail_load(msg: str):
+            def upd():
+                dlg.content = ft.Container(content=ft.Column([
+                    ft.Icon(ft.Icons.ERROR_OUTLINE, color=ERROR_C, size=32),
+                    ft.Text("Impossible de préparer le post", size=14, weight=ft.FontWeight.BOLD),
+                    ft.Text(msg, size=12, color=OUTLINE),
+                ], spacing=8, tight=True), width=560)
+                page.update()
+            page.run_thread(upd)
+
+        def _build_form():
+            """Construit le formulaire complet une fois creator_info chargé."""
+            ci = state["creator_info"] or {}
+            duration = state["duration"]
+            nickname = ci.get("creator_nickname") or ci.get("creator_username") or _active_label
+            avatar_url = ci.get("creator_avatar_url") or ""
+
+            privacy_options = ci.get("privacy_level_options") or []
+            if not privacy_options:
+                privacy_options = ["SELF_ONLY"]  # fallback minimal
+            max_dur = ci.get("max_video_post_duration_sec") or 0
+
+            # Caption pré-remplie depuis caption.txt si dispo
+            preset_caption = ""
+            caption_path = vdir / "caption.txt"
+            if caption_path.exists():
+                try:
+                    preset_caption = caption_path.read_text(encoding="utf-8").strip()
+                except Exception:
+                    pass
+
+            # ── Widgets formulaire ──
+            avatar_widget = (
+                ft.CircleAvatar(foreground_image_src=avatar_url, radius=18)
+                if avatar_url else
+                ft.CircleAvatar(content=ft.Text(nickname[:1].upper()), radius=18, bgcolor=ACCENT_DIM)
+            )
+            header = ft.Row([
+                avatar_widget,
+                ft.Column([
+                    ft.Text(f"Publication sur le profil de", size=11, color=OUTLINE),
+                    ft.Text(f"@{nickname}", size=14, weight=ft.FontWeight.BOLD, color=ON_SURFACE),
+                ], spacing=2, tight=True),
+            ], spacing=10)
+
+            # Preview vidéo
+            thumb_src = state["thumb_path"]
+            preview_img = (
+                ft.Image(src=str(thumb_src), width=120, height=160,
+                         fit=ft.ImageFit.COVER, border_radius=8)
+                if thumb_src and Path(thumb_src).exists()
+                else ft.Container(content=ft.Icon(ft.Icons.VIDEO_FILE, size=40, color=OUTLINE),
+                                  width=120, height=160, border_radius=8,
+                                  bgcolor=SURFACE_HIGH, alignment=ft.Alignment.CENTER)
+            )
+            dur_str = f"{duration:.1f}s" if duration else "?"
+            max_str = f" / max {max_dur}s" if max_dur else ""
+            preview_block = ft.Row([
+                preview_img,
+                ft.Column([
+                    ft.Text(vdir.name, size=12, weight=ft.FontWeight.W_600, color=ON_SURFACE),
+                    ft.Text(f"Durée : {dur_str}{max_str}", size=11, color=OUTLINE),
+                    ft.Text(f"Fichier : {vp.stat().st_size // (1024*1024)} MB", size=11, color=OUTLINE),
+                ], spacing=4, tight=True),
+            ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.START)
+
+            # Title (éditable)
+            title_field = ft.TextField(
+                label="Titre / Description (max 2200 caractères)",
+                value=preset_caption,
+                multiline=True,
+                min_lines=2,
+                max_lines=4,
+                max_length=2200,
+            )
+
+            # Privacy dropdown — SANS valeur par défaut (exigence TikTok)
+            privacy_labels = {
+                "PUBLIC_TO_EVERYONE": "Tout le monde",
+                "MUTUAL_FOLLOW_FRIENDS": "Amis (abonnés mutuels)",
+                "FOLLOWER_OF_CREATOR": "Abonnés",
+                "SELF_ONLY": "Seulement moi (privé)",
+            }
+            privacy_dropdown = ft.Dropdown(
+                label="Confidentialité *",
+                hint_text="Sélectionne qui peut voir cette vidéo",
+                options=[ft.dropdown.Option(key=p, text=privacy_labels.get(p, p))
+                         for p in privacy_options],
+                value=None,  # AUCUN défaut
+            )
+
+            # Interactions — OFF par défaut, grisées si désactivées côté créateur
+            comment_disabled = bool(ci.get("comment_disabled"))
+            duet_disabled    = bool(ci.get("duet_disabled"))
+            stitch_disabled  = bool(ci.get("stitch_disabled"))
+
+            cb_comment = ft.Checkbox(label="Autoriser les commentaires", value=False,
+                                     disabled=comment_disabled)
+            cb_duet    = ft.Checkbox(label="Autoriser les Duets", value=False,
+                                     disabled=duet_disabled)
+            cb_stitch  = ft.Checkbox(label="Autoriser les Stitch", value=False,
+                                     disabled=stitch_disabled)
+            interactions_block = ft.Column([
+                ft.Text("Interactions autorisées", size=12, weight=ft.FontWeight.W_600,
+                        color=ON_SURFACE),
+                cb_comment, cb_duet, cb_stitch,
+            ], spacing=4)
+
+            # Commercial content disclosure
+            commercial_toggle = ft.Switch(label="Cette vidéo fait la promotion d'une marque, d'un produit ou d'un service",
+                                          value=False)
+            cb_your_brand = ft.Checkbox(label="Mon propre contenu (Your Brand)", value=False, visible=False)
+            cb_branded_content = ft.Checkbox(label="Marque tierce / partenariat rémunéré (Branded Content)",
+                                              value=False, visible=False)
+            brand_prompt = ft.Text("", size=11, color=WARN_C, visible=False)
+            commercial_section = ft.Column([
+                commercial_toggle,
+                ft.Container(content=ft.Column([cb_your_brand, cb_branded_content, brand_prompt],
+                                               spacing=4),
+                             padding=ft.Padding.symmetric(horizontal=24, vertical=0)),
+            ], spacing=4)
+
+            # Déclaration légale dynamique
+            DECLARATION_DEFAULT = "En publiant, vous acceptez la confirmation d'utilisation musicale de TikTok."
+            DECLARATION_BRANDED = ("En publiant, vous acceptez la politique de contenu de marque de TikTok "
+                                   "et la confirmation d'utilisation musicale.")
+            declaration = ft.Text(DECLARATION_DEFAULT, size=11, color=OUTLINE,
+                                  italic=True)
+            processing_note = ft.Row([
+                ft.Icon(ft.Icons.INFO_OUTLINE, size=14, color=OUTLINE),
+                ft.Text("Après publication, la vidéo peut mettre quelques minutes à apparaître sur votre profil.",
+                        size=11, color=OUTLINE, expand=True),
+            ], spacing=6)
+
+            # Bouton Publier (initialement disabled)
+            publish_btn = ft.FilledButton("Publier", icon=ft.Icons.SEND, disabled=True,
+                                          style=ft.ButtonStyle(bgcolor=ACCENT, color="white"))
+
+            # ── Logique conditionnelle ──
+            def _refresh_conditions(e=None):
+                commercial_on = commercial_toggle.value
+                cb_your_brand.visible = commercial_on
+                cb_branded_content.visible = commercial_on
+                brand_prompt.visible = commercial_on
+                if not commercial_on:
+                    cb_your_brand.value = False
+                    cb_branded_content.value = False
+
+                # Branded Content interdit avec SELF_ONLY → on désactive l'option dans le dropdown
+                # En Flet on ne peut pas désactiver une option spécifique facilement,
+                # donc on signale via le prompt et on bloque le bouton.
+                branded_with_private = cb_branded_content.value and privacy_dropdown.value == "SELF_ONLY"
+
+                # Prompts label dynamiques
+                if commercial_on:
+                    if cb_your_brand.value and cb_branded_content.value:
+                        brand_prompt.value = "Votre vidéo sera étiquetée 'Partenariat rémunéré'."
+                    elif cb_branded_content.value:
+                        brand_prompt.value = "Votre vidéo sera étiquetée 'Partenariat rémunéré'."
+                    elif cb_your_brand.value:
+                        brand_prompt.value = "Votre vidéo sera étiquetée 'Contenu promotionnel'."
+                    else:
+                        brand_prompt.value = "Vous devez indiquer si votre contenu fait la promotion de vous-même, d'un tiers, ou des deux."
+                    brand_prompt.color = ERROR_C if (not cb_your_brand.value and not cb_branded_content.value) else WARN_C
+                if branded_with_private:
+                    brand_prompt.value = "La visibilité 'Privé' n'est pas compatible avec un Branded Content. Choisissez une autre option."
+                    brand_prompt.color = ERROR_C
+                    brand_prompt.visible = True
+
+                # Déclaration légale
+                if commercial_on and cb_branded_content.value:
+                    declaration.value = DECLARATION_BRANDED
+                else:
+                    declaration.value = DECLARATION_DEFAULT
+
+                # Bouton Publier — toutes les conditions
+                ok_privacy = bool(privacy_dropdown.value)
+                ok_commercial = (not commercial_on) or (cb_your_brand.value or cb_branded_content.value)
+                ok_branded_privacy = not branded_with_private
+                ok_duration = (max_dur == 0) or (duration is None) or (duration <= max_dur)
+                publish_btn.disabled = not (ok_privacy and ok_commercial and ok_branded_privacy and ok_duration)
+                page.update()
+
+            commercial_toggle.on_change = _refresh_conditions
+            cb_your_brand.on_change = _refresh_conditions
+            cb_branded_content.on_change = _refresh_conditions
+            privacy_dropdown.on_change = _refresh_conditions
+
+            # ── Action Publier ──
+            def _on_publish(e):
+                metadata = {
+                    "title": title_field.value or "",
+                    "privacy_level": privacy_dropdown.value,
+                    "allow_comment": bool(cb_comment.value),
+                    "allow_duet": bool(cb_duet.value),
+                    "allow_stitch": bool(cb_stitch.value),
+                    "brand_organic": bool(commercial_toggle.value and cb_your_brand.value),
+                    "brand_content": bool(commercial_toggle.value and cb_branded_content.value),
+                }
+                # Sauve la caption éditée pour les retries futurs
+                try:
+                    if metadata["title"]:
+                        (vdir / "caption.txt").write_text(metadata["title"], encoding="utf-8")
+                except Exception:
+                    pass
+                _close()
+                _execute_direct_post(vdir, metadata)
+
+            publish_btn.on_click = _on_publish
+
+            # ── Composition finale du dialog ──
+            form = ft.Column([
+                header,
+                ft.Divider(height=8, color=OUTLINE),
+                preview_block,
+                ft.Container(height=4),
+                title_field,
+                privacy_dropdown,
+                interactions_block,
+                ft.Divider(height=8, color=OUTLINE),
+                commercial_section,
+                ft.Divider(height=8, color=OUTLINE),
+                processing_note,
+                declaration,
+            ], spacing=10, scroll=ft.ScrollMode.AUTO, tight=False)
+
+            def upd():
+                dlg.content = ft.Container(content=form, width=560, height=620)
+                dlg.actions = [
+                    ft.TextButton("Annuler", on_click=lambda e: _close()),
+                    publish_btn,
+                ]
+                page.update()
+            page.run_thread(upd)
+
+        # ── Charger creator_info + durée + thumbnail en arrière-plan ──
+        def _load_async():
+            try:
+                ci = query_creator_info(_active_tok)
+            except CreatorInfoError as ex:
+                _fail_load(f"creator_info indisponible : {ex}")
+                return
+            except Exception as ex:
+                _fail_load(f"Erreur inattendue : {ex}")
+                return
+
+            # Vérification quota créateur
+            if ci.get("status") == "user_quota_exceeded" or ci.get("can_post") is False:
+                _fail_load("Le créateur a atteint sa limite de posts pour les 24h. Réessayez plus tard.")
+                return
+
+            state["creator_info"] = ci
+            state["duration"] = get_video_duration(vp)
+
+            # Thumbnail
+            thumb = vdir / "thumbnail.jpg"
+            if not thumb.exists():
+                extract_thumbnail(vp, thumb, timestamp_s=min(1.0, (state["duration"] or 1.0) / 2))
+            state["thumb_path"] = thumb if thumb.exists() else None
+
+            _build_form()
+
+        threading.Thread(target=_load_async, daemon=True).start()
+
+    def _execute_direct_post(vdir, metadata: dict):
+        """
+        Exécute un Direct Post TikTok avec les métadonnées validées par l'utilisateur
+        via le dialog conforme. metadata contient : title, privacy_level, allow_comment,
+        allow_duet, allow_stitch, brand_organic, brand_content.
+        """
         vp = vdir / "video_final.mp4"
         if not vp.exists():
             toast(f"Pas de video dans {vdir.name}", "error")
@@ -767,7 +1133,32 @@ def main(page: ft.Page):
         page.update()
 
         def do():
-            # Récupérer le token du compte actif depuis le gestionnaire
+            LOGS_DIR.mkdir(parents=True, exist_ok=True)
+            upload_log_path = LOGS_DIR / "upload_tiktok.log"
+
+            def _log(level: str, msg: str):
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                line = f"[{ts}] {level:<8} [upload] {msg}\n"
+                try:
+                    with upload_log_path.open("a", encoding="utf-8") as fh:
+                        fh.write(line)
+                except Exception:
+                    pass
+
+            def _log_subprocess(raw: str):
+                if raw.startswith("[ERR]"):
+                    level = "ERROR"
+                else:
+                    level = "INFO"
+                cleaned = re.sub(r'^\[(INFO|OK|ERR)\]\s*', '', raw)
+                _log(level, cleaned)
+
+            _log("INFO", f"=== Direct Post conforme depuis GUI: {vdir.name} ===")
+            _log("INFO", f"Titre: {metadata.get('title','')[:120]}")
+            _log("INFO", f"Privacy: {metadata.get('privacy_level')}")
+            _log("INFO", f"Comment={metadata.get('allow_comment')} Duet={metadata.get('allow_duet')} Stitch={metadata.get('allow_stitch')}")
+            _log("INFO", f"BrandOrganic={metadata.get('brand_organic')} BrandContent={metadata.get('brand_content')}")
+
             _accounts_data, _active_id = _load_accounts_data()
             _active_tok = ""
             if _active_id:
@@ -775,12 +1166,26 @@ def main(page: ft.Page):
                     if _a.get("id") == _active_id:
                         _active_tok = (_a.get("access_token") or "").strip()
                         break
-            _post_cmd = [PYTHON, "-u", str(BASE_DIR / "pipeline" / "post_tiktok_inbox.py"), "--video", str(vp), "--poll"]
+
+            cmd = [PYTHON, "-u", str(BASE_DIR / "pipeline" / "post_tiktok_inbox.py"),
+                   "--video", str(vp), "--poll", "--direct",
+                   "--caption", metadata.get("title", ""),
+                   "--privacy", metadata["privacy_level"]]
             if _active_tok:
-                _post_cmd += ["--token", _active_tok]
+                cmd += ["--token", _active_tok]
+            if metadata.get("allow_comment"):
+                cmd.append("--allow-comment")
+            if metadata.get("allow_duet"):
+                cmd.append("--allow-duet")
+            if metadata.get("allow_stitch"):
+                cmd.append("--allow-stitch")
+            if metadata.get("brand_organic"):
+                cmd.append("--brand-organic")
+            if metadata.get("brand_content"):
+                cmd.append("--brand-content")
+
             proc = subprocess.Popen(
-                _post_cmd,
-                cwd=str(BASE_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                cmd, cwd=str(BASE_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, bufsize=1,
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             )
@@ -791,10 +1196,160 @@ def main(page: ft.Page):
                 line = line.strip()
                 if not line:
                     continue
+                _log_subprocess(line)
                 ll = line.lower()
 
                 if any(w in ll for w in ["[err]", "spam_risk", "scope_not",
                                           "unaudited", "token_invalid"]):
+                    m_json = re.search(r'"message"\s*:\s*"([^"]+)"', line)
+                    last_error = m_json.group(1) if m_json else re.sub(r'^\[ERR\]\s*', '', line, flags=re.IGNORECASE)
+
+                m_chunk = re.search(r'chunk (\d+)/(\d+)', line, re.IGNORECASE)
+                if m_chunk:
+                    c, t = int(m_chunk.group(1)), int(m_chunk.group(2))
+                    pct = c / t * 0.6
+                    def u1(p=pct, c=c, t=t):
+                        upload_bar_progress.value = p
+                        upload_bar_pct.value = f"{int(p*100)}%"
+                        upload_bar_text.value = f"Chunk {c}/{t}"
+                        page.update()
+                    page.run_thread(u1)
+
+                if "[ok] upload termin" in ll:
+                    def u2():
+                        upload_bar_progress.value = 0.6
+                        upload_bar_text.value = "Verification TikTok (peut prendre quelques minutes)..."
+                        upload_bar_pct.value = "60%"
+                        page.update()
+                    page.run_thread(u2)
+
+                if "tentative" in ll:
+                    poll_count += 1
+                    pct = 0.6 + min(poll_count * 0.02, 0.35)
+                    def u3(p=pct, n=poll_count):
+                        upload_bar_progress.value = p
+                        upload_bar_pct.value = f"{int(p*100)}%"
+                        upload_bar_text.value = f"Verification ({n})..."
+                        page.update()
+                    page.run_thread(u3)
+
+                if "success" in ll and "status" in ll:
+                    def u4():
+                        upload_bar_progress.value = 1.0
+                        upload_bar_progress.color = SUCCESS
+                        upload_bar_pct.value = "100%"
+                        upload_bar_text.value = "Publication reussie !"
+                        page.update()
+                    page.run_thread(u4)
+
+            proc.wait()
+            success = proc.returncode == 0
+
+            if success:
+                _log("INFO", f"=== Direct Post réussi: {vdir.name} ===")
+            else:
+                _log("ERROR", f"=== Direct Post échoué (rc={proc.returncode}): {last_error or 'erreur inconnue'} ===")
+
+            def finish():
+                upload_running["ref"] = False
+                if success:
+                    win_notify("Mr Martin", "Vidéo publiée sur TikTok !")
+                    try:
+                        shutil.rmtree(vdir)
+                        toast(f"{vdir.name} postee et supprimee", "success")
+                    except Exception as ex:
+                        toast(f"Postee mais erreur suppression: {ex}", "warning")
+                    upload_bar_progress.value = 1.0
+                    upload_bar_progress.color = SUCCESS
+                    upload_bar_pct.value = "100%"
+                    upload_bar_text.value = "Publie avec succes (peut prendre qq min pour apparaitre)"
+                else:
+                    reason = last_error[:80] if last_error else "Erreur inconnue"
+                    toast(f"Echec: {reason}", "error")
+                    upload_bar_progress.color = ERROR_C
+                    upload_bar_text.value = reason[:60]
+                    upload_bar_pct.value = ""
+                refresh_all()
+                page.update()
+                import time
+                time.sleep(8)
+                upload_bar.visible = False
+                page.update()
+
+            page.run_thread(finish)
+
+        threading.Thread(target=do, daemon=True).start()
+
+    def post_video(vdir):
+        """
+        Point d'entrée GUI pour poster une vidéo pending.
+        - TIKTOK_DIRECT_POST_ENABLED=1 : ouvre le dialog conforme → Direct Post (post-audit)
+        - sinon (défaut)                : upload INBOX simple sans UX (pré-audit, draft TikTok)
+        """
+        if os.getenv("TIKTOK_DIRECT_POST_ENABLED", "0").strip() == "1":
+            _open_post_composer(vdir)
+        else:
+            _post_video_inbox_simple(vdir)
+
+    def _post_video_inbox_simple(vdir):
+        """Upload INBOX direct, sans dialog. Utilisé tant que l'app n'est pas auditée Direct Post."""
+        vp = vdir / "video_final.mp4"
+        if not vp.exists():
+            toast(f"Pas de video dans {vdir.name}", "error")
+            return
+
+        upload_running["ref"] = True
+        upload_bar.visible = True
+        upload_bar_text.value = f"Upload {vdir.name} (brouillon)..."
+        upload_bar_pct.value = "0%"
+        upload_bar_progress.value = 0
+        upload_bar_progress.color = ACCENT
+        page.update()
+
+        def do():
+            LOGS_DIR.mkdir(parents=True, exist_ok=True)
+            upload_log_path = LOGS_DIR / "upload_tiktok.log"
+
+            def _log(level: str, msg: str):
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                try:
+                    with upload_log_path.open("a", encoding="utf-8") as fh:
+                        fh.write(f"[{ts}] {level:<8} [upload] {msg}\n")
+                except Exception:
+                    pass
+
+            _log("INFO", f"=== Upload INBOX manuel: {vdir.name} ===")
+
+            _accounts_data, _active_id = _load_accounts_data()
+            _active_tok = ""
+            if _active_id:
+                for _a in _accounts_data:
+                    if _a.get("id") == _active_id:
+                        _active_tok = (_a.get("access_token") or "").strip()
+                        break
+
+            cmd = [PYTHON, "-u", str(BASE_DIR / "pipeline" / "post_tiktok_inbox.py"),
+                   "--video", str(vp), "--poll"]
+            if _active_tok:
+                cmd += ["--token", _active_tok]
+
+            proc = subprocess.Popen(
+                cmd, cwd=str(BASE_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, bufsize=1,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            )
+            last_error = ""
+            poll_count = 0
+
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                level = "ERROR" if line.startswith("[ERR]") else "INFO"
+                _log(level, re.sub(r'^\[(INFO|OK|ERR)\]\s*', '', line))
+                ll = line.lower()
+
+                if any(w in ll for w in ["[err]", "spam_risk", "scope_not", "unaudited", "token_invalid"]):
                     m_json = re.search(r'"message"\s*:\s*"([^"]+)"', line)
                     last_error = m_json.group(1) if m_json else re.sub(r'^\[ERR\]\s*', '', line, flags=re.IGNORECASE)
 
@@ -832,26 +1387,24 @@ def main(page: ft.Page):
                         upload_bar_progress.value = 1.0
                         upload_bar_progress.color = SUCCESS
                         upload_bar_pct.value = "100%"
-                        upload_bar_text.value = "Publication reussie !"
+                        upload_bar_text.value = "Brouillon envoye sur TikTok"
                         page.update()
                     page.run_thread(u4)
 
             proc.wait()
             success = proc.returncode == 0
+            _log("INFO" if success else "ERROR",
+                 f"=== Upload INBOX {'OK' if success else f'KO (rc={proc.returncode}): {last_error}'} — {vdir.name} ===")
 
             def finish():
                 upload_running["ref"] = False
                 if success:
-                    win_notify("Mr Martin", "Vidéo publiée sur TikTok !")
+                    win_notify("Mr Martin", "Vidéo envoyée en brouillon TikTok !")
                     try:
                         shutil.rmtree(vdir)
-                        toast(f"{vdir.name} postee et supprimee", "success")
+                        toast(f"{vdir.name} envoye en brouillon", "success")
                     except Exception as ex:
-                        toast(f"Postee mais erreur suppression: {ex}", "warning")
-                    upload_bar_progress.value = 1.0
-                    upload_bar_progress.color = SUCCESS
-                    upload_bar_pct.value = "100%"
-                    upload_bar_text.value = "Publie avec succes !"
+                        toast(f"Envoye mais erreur suppression: {ex}", "warning")
                 else:
                     reason = last_error[:80] if last_error else "Erreur inconnue"
                     toast(f"Echec: {reason}", "error")
@@ -919,7 +1472,6 @@ def main(page: ft.Page):
             return
 
         def confirm(ev):
-            _close_dialog(dlg)
             deleted = 0
             for f in files:
                 try:
@@ -927,11 +1479,14 @@ def main(page: ft.Page):
                     deleted += 1
                 except Exception:
                     pass
+            dlg.open = False
             toast(f"{deleted} vidéo(s) supprimée(s)", "success")
             refresh_all()
+            page.update()
 
         def cancel(ev):
-            _close_dialog(dlg)
+            dlg.open = False
+            page.update()
 
         dlg = ft.AlertDialog(
             title=ft.Text("Vider download/"),
@@ -947,24 +1502,33 @@ def main(page: ft.Page):
 
     def reset_pipeline_state(e=None):
         def confirm(ev):
-            _close_dialog(dlg)
+            # Travail d'abord, fermeture dialog + update ensuite (pattern sûr Flet 0.84)
+            err = None
             try:
-                PIPELINE_STATE_FILE.unlink(missing_ok=True)
+                if PIPELINE_STATE_FILE.exists():
+                    PIPELINE_STATE_FILE.unlink()
                 pipeline_current["ref"] = -1
                 on_new_generation()
                 reset_pipeline()
-                toast("Pipeline réinitialisé", "success")
-                refresh_all()
             except Exception as ex:
-                toast(f"Erreur reset pipeline : {ex}", "error")
+                err = str(ex)
+            dlg.open = False
+            if err:
+                toast(f"Erreur reset pipeline : {err}", "error")
+            else:
+                switch_view("pipeline")
+                toast("Pipeline réinitialisé", "success")
+            refresh_all()
+            page.update()
 
         def cancel(ev):
-            _close_dialog(dlg)
+            dlg.open = False
+            page.update()
 
         dlg = ft.AlertDialog(
             title=ft.Text("Réinitialiser le pipeline ?"),
             content=ft.Text(
-                "Cela supprime pipeline_state.json. Au prochain lancement, les étapes ne seront plus considérées comme déjà faites."
+                "Supprime pipeline_state.json — le pipeline repartira de zéro au prochain run."
             ),
             actions=[
                 ft.TextButton("Annuler", on_click=cancel),
@@ -1681,7 +2245,7 @@ def main(page: ft.Page):
 
         def on_remove(e, aid=acc_id):
             def confirm(ev):
-                _close_dialog(dlg)
+                err = None
                 try:
                     if ACCOUNTS_FILE.exists():
                         data = json.loads(ACCOUNTS_FILE.read_text(encoding="utf-8"))
@@ -1692,17 +2256,22 @@ def main(page: ft.Page):
                         ACCOUNTS_FILE.write_text(
                             json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
                         )
-                    # Supprimer l'avatar local
                     avatar_path = BASE_DIR / "config" / "avatars" / f"{aid}.jpg"
                     if avatar_path.exists():
                         avatar_path.unlink()
                 except Exception as ex:
-                    toast(f"Erreur suppression : {ex}", "error")
+                    err = str(ex)
+                dlg.open = False
+                if err:
+                    toast(f"Erreur suppression : {err}", "error")
+                else:
+                    toast(f"Compte {display_name} supprimé", "warning")
                 refresh_accounts()
-                toast(f"Compte {display_name} supprimé", "warning")
+                page.update()
 
             def cancel(ev):
-                _close_dialog(dlg)
+                dlg.open = False
+                page.update()
 
             dlg = ft.AlertDialog(
                 title=ft.Text("Supprimer ce compte ?"),
@@ -2133,11 +2702,11 @@ def main(page: ft.Page):
             is_active      = vn == name
             btn.bgcolor    = ACCENT_DIM if is_active else None
             btn.border     = ft.border.all(1, ACCENT) if is_active else None
+        page.update()
         if name == "queue":
             refresh_queue()
         elif name == "calendar":
             refresh_calendar()
-        page.update()
 
     def _make_view_btn(icon, label, view_name):
         def _oc(e, n=view_name):
@@ -2291,7 +2860,7 @@ def main(page: ft.Page):
                     ], spacing=1, expand=True, tight=True),
                     ft.Row([
                         ft.FilledTonalButton(
-                            "Poster", icon=ft.Icons.SEND, icon_size=14,
+                            "Poster", icon=ft.Icons.SEND,
                             on_click=_mk_post_pend(),
                             style=ft.ButtonStyle(
                                 bgcolor=ACCENT_DIM, color=PRIMARY,
@@ -2321,26 +2890,41 @@ def main(page: ft.Page):
         except Exception:
             pass
 
-    # File picker — import vidéo vers download/
-    def on_video_import(ev: ft.FilePickerResultEvent):
-        if not ev.files:
-            return
-        DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        imported = 0
-        for f in ev.files:
+    # File picker — import vidéo vers download/ (tkinter natif, aucune dépendance Flet)
+    def _open_file_picker():
+        def do():
             try:
-                dst = DOWNLOAD_DIR / Path(f.name).name
-                shutil.copy(f.path, dst)
-                imported += 1
+                import tkinter as tk
+                from tkinter import filedialog
+                root = tk.Tk()
+                root.withdraw()
+                root.attributes("-topmost", True)
+                paths = filedialog.askopenfilenames(
+                    title="Sélectionner des vidéos à importer",
+                    filetypes=[("Vidéos", "*.mp4 *.mov *.avi *.mkv"), ("Tous les fichiers", "*.*")],
+                )
+                root.destroy()
             except Exception as ex:
-                toast(f"Erreur import {f.name}: {ex}", "error")
-        if imported:
-            toast(f"{imported} vidéo(s) importée(s) dans download/", "success")
-            refresh_queue()
-            refresh_all()
-
-    file_picker = ft.FilePicker(on_result=on_video_import)
-    page.overlay.append(file_picker)
+                page.run_thread(lambda: toast(f"Erreur ouverture dialog: {ex}", "error"))
+                return
+            if not paths:
+                return
+            DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+            imported = 0
+            for p in paths:
+                try:
+                    dst = DOWNLOAD_DIR / Path(p).name
+                    shutil.copy(p, dst)
+                    imported += 1
+                except Exception as ex:
+                    page.run_thread(lambda m=str(ex): toast(f"Erreur import: {m}", "error"))
+            if imported:
+                def finish():
+                    toast(f"{imported} vidéo(s) importée(s) dans download/", "success")
+                    refresh_queue()
+                    refresh_all()
+                page.run_thread(finish)
+        threading.Thread(target=do, daemon=True).start()
 
     queue_view = ft.Container(
         content=ft.Column([
@@ -2351,11 +2935,7 @@ def main(page: ft.Page):
                 ft.ElevatedButton(
                     "Importer une vidéo",
                     icon=ft.Icons.UPLOAD_FILE,
-                    on_click=lambda _: file_picker.pick_files(
-                        dialog_title="Sélectionner des vidéos à traiter",
-                        allowed_extensions=["mp4", "mov"],
-                        allow_multiple=True,
-                    ),
+                    on_click=lambda _: _open_file_picker(),
                     style=ft.ButtonStyle(bgcolor=ACCENT, color="white",
                                          shape=ft.RoundedRectangleBorder(radius=8)),
                 ),
@@ -2414,7 +2994,6 @@ def main(page: ft.Page):
         expand=True,
         padding=ft.Padding.all(20),
         bgcolor=BG,
-        visible=False,
     )
 
     # ── Calendar view ──────────────────────────────────────
@@ -2440,76 +3019,193 @@ def main(page: ft.Page):
                 pass
         return day_map
 
+    # ── Pickers date/heure partagés entre appels à show_schedule_dialog ──────────
+    _sched_state   = {"date": date.today(), "hour": 18, "minute": 0}
+    _sched_ui      = {"date_lbl": None, "time_lbl": None}
+    _pickers_ready = [False]
+
+    def _fmt_sched_date() -> str:
+        d = _sched_state["date"]
+        return f"{d.day:02d}/{d.month:02d}/{d.year}"
+
+    def _fmt_sched_time() -> str:
+        return f"{_sched_state['hour']:02d}:{_sched_state['minute']:02d}"
+
+    def _on_date_picked(e):
+        v = getattr(e.control, "value", None)
+        if v is not None:
+            _sched_state["date"] = v.date() if hasattr(v, "date") else v
+        lbl = _sched_ui.get("date_lbl")
+        if lbl:
+            lbl.value = _fmt_sched_date()
+            page.update()
+
+    def _on_time_picked(e):
+        v = getattr(e.control, "value", None)
+        if v is not None:
+            _sched_state["hour"]   = v.hour
+            _sched_state["minute"] = v.minute
+        lbl = _sched_ui.get("time_lbl")
+        if lbl:
+            lbl.value = _fmt_sched_time()
+            page.update()
+
+    _date_picker = ft.DatePicker()
+    _date_picker.on_change = _on_date_picked
+    _time_picker = ft.TimePicker()
+    _time_picker.on_change = _on_time_picked
+
     def show_schedule_dialog(for_date: date | None = None):
+        if for_date:
+            _sched_state["date"] = for_date
+
+        # Ajouter les pickers à overlay une seule fois
+        if not _pickers_ready[0]:
+            page.overlay.extend([_date_picker, _time_picker])
+            _pickers_ready[0] = True
+
+        # Options — uniquement pending_posts/ (download/ = vidéos brutes non traitées)
         options = []
-        if DOWNLOAD_DIR.exists():
-            for vf in sorted(DOWNLOAD_DIR.iterdir()):
-                if vf.is_file() and vf.suffix == ".mp4":
-                    options.append(ft.dropdown.Option(key=str(vf), text=vf.name[:50]))
         if PENDING_DIR.exists():
-            for pd in sorted(PENDING_DIR.iterdir()):
-                if pd.is_dir():
-                    vp = pd / "video_final.mp4"
+            for pd_dir in sorted(PENDING_DIR.iterdir(), reverse=True):
+                if pd_dir.is_dir():
+                    vp = pd_dir / "video_final.mp4"
                     if vp.exists():
                         options.append(ft.dropdown.Option(
                             key=str(vp),
-                            text=f"[échec] {pd.name[:40]}",
+                            text=pd_dir.name[:50],
                         ))
         if not options:
-            toast("Aucune vidéo disponible à programmer", "warning")
+            toast("Aucune vidéo en attente disponible à programmer", "warning")
             return
 
-        date_fld = ft.TextField(
-            value=(for_date or date.today()).isoformat(),
-            label="Date (YYYY-MM-DD)",
-            text_size=13, height=46,
-            content_padding=ft.Padding.symmetric(horizontal=10, vertical=8),
-            bgcolor=SURFACE_TOP, border_color=BORDER, focused_border_color=ACCENT,
-            expand=True,
+        # Panneau d'info vidéo
+        info_folder = ft.Text("", size=12, color="white70", no_wrap=False, max_lines=2, expand=True)
+        info_size   = ft.Text("", size=11, color="white38")
+
+        def _update_info(vpath: str):
+            try:
+                p = Path(vpath)
+                info_folder.value = p.parent.name
+                sz = p.stat().st_size / (1024 * 1024)
+                info_size.value   = f"{sz:.1f} Mo"
+            except Exception:
+                info_folder.value = ""
+                info_size.value   = ""
+
+        def _open_folder(e):
+            if video_dd.value:
+                try:
+                    os.startfile(str(Path(video_dd.value).parent))
+                except Exception:
+                    pass
+
+        info_panel = ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.VIDEOCAM, size=14, color=ACCENT),
+                    info_folder,
+                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.START),
+                ft.Row([
+                    ft.Icon(ft.Icons.STORAGE, size=13, color="white38"),
+                    info_size,
+                ], spacing=6),
+                ft.TextButton(
+                    "Ouvrir le dossier",
+                    icon=ft.Icons.FOLDER_OPEN,
+                    on_click=_open_folder,
+                    style=ft.ButtonStyle(
+                        color=ACCENT,
+                        padding=ft.Padding.symmetric(horizontal=0, vertical=0),
+                    ),
+                ),
+            ], spacing=4, tight=True),
+            bgcolor=SURFACE_TOP,
+            border_radius=8,
+            padding=ft.Padding.symmetric(horizontal=10, vertical=8),
+            border=ft.border.all(1, BORDER),
         )
-        time_fld = ft.TextField(
-            value="18:00",
-            label="Heure (HH:MM)",
-            text_size=13, height=46,
-            content_padding=ft.Padding.symmetric(horizontal=10, vertical=8),
-            bgcolor=SURFACE_TOP, border_color=BORDER, focused_border_color=ACCENT,
-            width=120,
-        )
+
+        def on_video_change(e):
+            _update_info(video_dd.value or "")
+            page.update()
+
         video_dd = ft.Dropdown(
             options=options,
-            label="Vidéo",
+            label="Vidéo à programmer",
             text_size=12,
             bgcolor=SURFACE_TOP,
             border_color=BORDER,
             focused_border_color=ACCENT,
-            value=options[0].key if options else None,
+            value=options[0].key,
         )
+        video_dd.on_change = on_video_change
+        _update_info(options[0].key)
+
+        # Labels date/heure mis à jour par les pickers
+        date_lbl = ft.Text(_fmt_sched_date(), size=13, color="white", expand=True)
+        time_lbl = ft.Text(_fmt_sched_time(), size=13, color="white", expand=True)
+        _sched_ui["date_lbl"] = date_lbl
+        _sched_ui["time_lbl"] = time_lbl
+
+        def open_date(e):
+            _date_picker.value = datetime(
+                _sched_state["date"].year,
+                _sched_state["date"].month,
+                _sched_state["date"].day,
+            )
+            _date_picker.open = True
+            page.update()
+
+        def open_time(e):
+            import datetime as _dt
+            _time_picker.value = _dt.time(_sched_state["hour"], _sched_state["minute"])
+            _time_picker.open = True
+            page.update()
+
         err_lbl = ft.Text("", size=11, color=ERROR_C)
 
         def on_save(e):
-            try:
-                datetime.fromisoformat(f"{date_fld.value}T{time_fld.value}:00")
-            except ValueError:
-                err_lbl.value = "Date ou heure invalide (YYYY-MM-DD et HH:MM)"
-                page.update()
-                return
             if not video_dd.value:
                 err_lbl.value = "Sélectionne une vidéo"
                 page.update()
                 return
+            d = _sched_state["date"]
+            scheduled_at = (
+                f"{d.year}-{d.month:02d}-{d.day:02d}"
+                f"T{_sched_state['hour']:02d}:{_sched_state['minute']:02d}:00"
+            )
             posts = _read_scheduled()
             posts.append({
                 "id":           f"sched_{int(datetime.now().timestamp())}",
                 "video_path":   video_dd.value,
-                "scheduled_at": f"{date_fld.value}T{time_fld.value}:00",
-                "title":        Path(video_dd.value).name,
+                "scheduled_at": scheduled_at,
+                "title":        Path(video_dd.value).parent.name,
                 "status":       "pending",
                 "created_at":   datetime.now().isoformat(timespec="seconds"),
             })
             _write_scheduled(posts)
-            _close_dialog(dlg)
+            dlg.open = False
+            _sched_ui["date_lbl"] = None
+            _sched_ui["time_lbl"] = None
             refresh_calendar()
-            toast(f"Publication programmée pour le {date_fld.value} à {time_fld.value}", "success")
+            toast(
+                f"Publication programmée pour le {_fmt_sched_date()} à {_fmt_sched_time()}",
+                "success",
+            )
+            page.update()
+
+        def on_cancel(e):
+            dlg.open = False
+            _sched_ui["date_lbl"] = None
+            _sched_ui["time_lbl"] = None
+            page.update()
+
+        picker_row_style = ft.ButtonStyle(
+            bgcolor=SURFACE_HIGH, color=ACCENT,
+            shape=ft.RoundedRectangleBorder(radius=6),
+            padding=ft.Padding.symmetric(horizontal=14, vertical=6),
+        )
 
         dlg = ft.AlertDialog(
             title=ft.Row([
@@ -2519,15 +3215,47 @@ def main(page: ft.Page):
             content=ft.Container(
                 content=ft.Column([
                     video_dd,
-                    ft.Row([date_fld, ft.Container(width=8), time_fld], spacing=0),
+                    info_panel,
+                    # Sélection date
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Icon(ft.Icons.CALENDAR_MONTH, size=16, color=ACCENT),
+                            ft.Text("Date :", size=12, color="white54", width=44),
+                            date_lbl,
+                            ft.FilledTonalButton("Choisir", on_click=open_date,
+                                                 style=picker_row_style),
+                        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        bgcolor=SURFACE_TOP,
+                        border_radius=8,
+                        padding=ft.Padding.symmetric(horizontal=10, vertical=8),
+                        border=ft.border.all(1, BORDER),
+                    ),
+                    # Sélection heure
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Icon(ft.Icons.ACCESS_TIME, size=16, color=ACCENT),
+                            ft.Text("Heure :", size=12, color="white54", width=44),
+                            time_lbl,
+                            ft.FilledTonalButton("Choisir", on_click=open_time,
+                                                 style=picker_row_style),
+                        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        bgcolor=SURFACE_TOP,
+                        border_radius=8,
+                        padding=ft.Padding.symmetric(horizontal=10, vertical=8),
+                        border=ft.border.all(1, BORDER),
+                    ),
                     err_lbl,
                 ], spacing=10, tight=True),
-                width=480, padding=ft.Padding.only(top=4, bottom=4),
+                width=480,
+                padding=ft.Padding.only(top=4, bottom=4),
             ),
             actions=[
-                ft.TextButton("Annuler", on_click=lambda _: _close_dialog(dlg)),
-                ft.FilledButton("Programmer", on_click=on_save,
-                                style=ft.ButtonStyle(bgcolor=ACCENT, color="white")),
+                ft.TextButton("Annuler", on_click=on_cancel),
+                ft.FilledButton(
+                    "Programmer",
+                    on_click=on_save,
+                    style=ft.ButtonStyle(bgcolor=ACCENT, color="white"),
+                ),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
             bgcolor=SURFACE,
@@ -2847,7 +3575,6 @@ def main(page: ft.Page):
         expand=True,
         padding=ft.Padding.all(20),
         bgcolor=BG,
-        visible=False,
     )
 
     # ── Sidebar ───────────────────────────────────────────
@@ -3166,9 +3893,23 @@ def main(page: ft.Page):
         data = str(getattr(e, 'data', ''))
         etype = str(getattr(e, 'type', ''))
         if "close" in data.lower() or "close" in etype.lower():
-            stop_scheduler()
+            # Fermer tous les dialogs ouverts pour ne pas bloquer la fermeture
+            try:
+                for ov in list(page.overlay):
+                    if hasattr(ov, "open"):
+                        ov.open = False
+                page.overlay.clear()
+            except Exception:
+                pass
+            try:
+                stop_scheduler()
+            except Exception:
+                pass
             page.window.prevent_close = False
-            page.update()
+            try:
+                page.update()
+            except Exception:
+                pass
             page.run_task(page.window.close)
 
     page.window.prevent_close = True
