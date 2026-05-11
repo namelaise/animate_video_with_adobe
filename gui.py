@@ -816,6 +816,21 @@ def main(page: ft.Page):
             toast("Aucun compte TikTok actif. Connecte-toi d'abord.", "error")
             return
 
+        # ── Logger dédié dialog ──
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        composer_log_path = LOGS_DIR / "upload_tiktok.log"
+
+        def _clog(level: str, msg: str):
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            try:
+                with composer_log_path.open("a", encoding="utf-8") as fh:
+                    fh.write(f"[{ts}] {level:<8} [upload] composer: {msg}\n")
+            except Exception:
+                pass
+
+        _clog("INFO", f"=== Ouverture composer pour {vdir.name} ===")
+        _clog("INFO", f"Token len={len(_active_tok)} actif={_active_id}")
+
         # ── État partagé du dialog ─────────────────────────────────────────
         state = {
             "creator_info": None,
@@ -850,13 +865,26 @@ def main(page: ft.Page):
         _open_dialog(dlg)
 
         def _fail_load(msg: str):
+            _clog("ERROR", f"_fail_load: {msg[:300]}")
             def upd():
-                dlg.content = ft.Container(content=ft.Column([
-                    ft.Icon(ft.Icons.ERROR_OUTLINE, color=ERROR_C, size=32),
-                    ft.Text("Impossible de préparer le post", size=14, weight=ft.FontWeight.BOLD),
-                    ft.Text(msg, size=12, color=OUTLINE),
-                ], spacing=8, tight=True), width=560)
-                page.update()
+                try:
+                    dlg.content = ft.Container(content=ft.Column([
+                        ft.Icon(ft.Icons.ERROR_OUTLINE, color=ERROR_C, size=32),
+                        ft.Text("Impossible de préparer le post", size=14, weight=ft.FontWeight.BOLD),
+                        ft.Container(
+                            content=ft.Text(msg, size=11, color=OUTLINE, selectable=True),
+                            padding=8,
+                            bgcolor=SURFACE_HIGH,
+                            border_radius=6,
+                        ),
+                    ], spacing=8, scroll=ft.ScrollMode.AUTO), width=560, height=300)
+                    try:
+                        dlg.update()
+                    except Exception:
+                        pass
+                    page.update()
+                except Exception as ex:
+                    _clog("ERROR", f"_fail_load.upd erreur: {ex}")
             page.run_thread(upd)
 
         def _build_form():
@@ -898,7 +926,7 @@ def main(page: ft.Page):
             thumb_src = state["thumb_path"]
             preview_img = (
                 ft.Image(src=str(thumb_src), width=120, height=160,
-                         fit=ft.ImageFit.COVER, border_radius=8)
+                         fit="cover", border_radius=8)
                 if thumb_src and Path(thumb_src).exists()
                 else ft.Container(content=ft.Icon(ft.Icons.VIDEO_FILE, size=40, color=OUTLINE),
                                   width=120, height=160, border_radius=8,
@@ -983,9 +1011,33 @@ def main(page: ft.Page):
                         size=11, color=OUTLINE, expand=True),
             ], spacing=6)
 
+            # Indicateur du mode actif (DIRECT vs INBOX)
+            direct_enabled = os.getenv("TIKTOK_DIRECT_POST_ENABLED", "0").strip() == "1"
+            mode_label = (
+                "Mode actuel : Publication directe sur ton profil"
+                if direct_enabled else
+                "Mode actuel : Envoi en brouillon (pré-audit) — tu finaliseras dans l'app TikTok"
+            )
+            mode_indicator = ft.Container(
+                content=ft.Row([
+                    ft.Icon(
+                        ft.Icons.PUBLIC if direct_enabled else ft.Icons.DRAFTS,
+                        size=14, color=SUCCESS if direct_enabled else WARN_C,
+                    ),
+                    ft.Text(mode_label, size=11,
+                            color=SUCCESS if direct_enabled else WARN_C, expand=True),
+                ], spacing=6),
+                padding=ft.Padding.symmetric(horizontal=10, vertical=8),
+                bgcolor=("rgba(34,197,94,0.08)" if direct_enabled else "rgba(245,158,11,0.08)"),
+                border_radius=8,
+            )
+
             # Bouton Publier (initialement disabled)
-            publish_btn = ft.FilledButton("Publier", icon=ft.Icons.SEND, disabled=True,
-                                          style=ft.ButtonStyle(bgcolor=ACCENT, color="white"))
+            publish_btn = ft.FilledButton(
+                "Publier" if direct_enabled else "Envoyer en brouillon",
+                icon=ft.Icons.SEND, disabled=True,
+                style=ft.ButtonStyle(bgcolor=ACCENT, color="white"),
+            )
 
             # ── Logique conditionnelle ──
             def _refresh_conditions(e=None):
@@ -1055,7 +1107,12 @@ def main(page: ft.Page):
                 except Exception:
                     pass
                 _close()
-                _execute_direct_post(vdir, metadata)
+                if direct_enabled:
+                    _execute_direct_post(vdir, metadata)
+                else:
+                    # Pré-audit : upload INBOX. Les métadonnées sont sauvées dans
+                    # caption.txt et serviront quand TIKTOK_DIRECT_POST_ENABLED=1.
+                    _post_video_inbox_simple(vdir)
 
             publish_btn.on_click = _on_publish
 
@@ -1073,43 +1130,84 @@ def main(page: ft.Page):
                 ft.Divider(height=8, color=OUTLINE),
                 processing_note,
                 declaration,
+                mode_indicator,
             ], spacing=10, scroll=ft.ScrollMode.AUTO, tight=False)
 
             def upd():
-                dlg.content = ft.Container(content=form, width=560, height=620)
-                dlg.actions = [
-                    ft.TextButton("Annuler", on_click=lambda e: _close()),
-                    publish_btn,
-                ]
-                page.update()
+                try:
+                    dlg.content = ft.Container(content=form, width=560, height=620)
+                    dlg.actions = [
+                        ft.TextButton("Annuler", on_click=lambda e: _close()),
+                        publish_btn,
+                    ]
+                    try:
+                        dlg.update()
+                    except Exception:
+                        pass
+                    page.update()
+                    _clog("INFO", "Dialog form rendu (page.update appelé)")
+                except Exception as ex:
+                    _clog("ERROR", f"upd erreur: {ex}")
             page.run_thread(upd)
 
         # ── Charger creator_info + durée + thumbnail en arrière-plan ──
         def _load_async():
+            import traceback
+            _clog("INFO", "_load_async démarré")
             try:
-                ci = query_creator_info(_active_tok)
-            except CreatorInfoError as ex:
-                _fail_load(f"creator_info indisponible : {ex}")
-                return
+                _clog("INFO", "Appel query_creator_info...")
+                try:
+                    ci = query_creator_info(_active_tok)
+                    _clog("INFO", f"creator_info OK: nickname={ci.get('creator_nickname')} "
+                                   f"privacy_options={ci.get('privacy_level_options')} "
+                                   f"max_dur={ci.get('max_video_post_duration_sec')}")
+                except CreatorInfoError as ex:
+                    _clog("ERROR", f"CreatorInfoError: {ex}")
+                    _fail_load(f"creator_info indisponible : {ex}")
+                    return
+                except Exception as ex:
+                    _clog("ERROR", f"Exception query_creator_info: {ex}")
+                    _fail_load(f"Erreur réseau creator_info : {ex}")
+                    return
+
+                if ci.get("status") == "user_quota_exceeded" or ci.get("can_post") is False:
+                    _clog("ERROR", f"Quota dépassé: status={ci.get('status')} can_post={ci.get('can_post')}")
+                    _fail_load("Le créateur a atteint sa limite de posts pour les 24h. Réessayez plus tard.")
+                    return
+
+                state["creator_info"] = ci
+
+                try:
+                    state["duration"] = get_video_duration(vp)
+                    _clog("INFO", f"Durée vidéo: {state['duration']}s")
+                except Exception as ex:
+                    _clog("WARNING", f"get_video_duration: {ex}")
+                    state["duration"] = None
+
+                try:
+                    thumb = vdir / "thumbnail.jpg"
+                    if not thumb.exists():
+                        _clog("INFO", "Extraction thumbnail...")
+                        extract_thumbnail(vp, thumb,
+                                          timestamp_s=min(1.0, (state["duration"] or 1.0) / 2))
+                    state["thumb_path"] = thumb if thumb.exists() else None
+                    _clog("INFO", f"thumb_path={state['thumb_path']}")
+                except Exception as ex:
+                    _clog("WARNING", f"extract_thumbnail: {ex}")
+                    state["thumb_path"] = None
+
+                _clog("INFO", "Appel _build_form()...")
+                try:
+                    _build_form()
+                    _clog("INFO", "_build_form() terminé")
+                except Exception as ex:
+                    tb = traceback.format_exc()
+                    _clog("ERROR", f"Exception _build_form: {ex}\n{tb}")
+                    _fail_load(f"Erreur construction formulaire : {ex}\n\n{tb[:600]}")
             except Exception as ex:
-                _fail_load(f"Erreur inattendue : {ex}")
-                return
-
-            # Vérification quota créateur
-            if ci.get("status") == "user_quota_exceeded" or ci.get("can_post") is False:
-                _fail_load("Le créateur a atteint sa limite de posts pour les 24h. Réessayez plus tard.")
-                return
-
-            state["creator_info"] = ci
-            state["duration"] = get_video_duration(vp)
-
-            # Thumbnail
-            thumb = vdir / "thumbnail.jpg"
-            if not thumb.exists():
-                extract_thumbnail(vp, thumb, timestamp_s=min(1.0, (state["duration"] or 1.0) / 2))
-            state["thumb_path"] = thumb if thumb.exists() else None
-
-            _build_form()
+                tb = traceback.format_exc()
+                _clog("ERROR", f"Exception _load_async: {ex}\n{tb}")
+                _fail_load(f"Erreur inattendue : {ex}\n\n{tb[:600]}")
 
         threading.Thread(target=_load_async, daemon=True).start()
 
@@ -1283,13 +1381,10 @@ def main(page: ft.Page):
     def post_video(vdir):
         """
         Point d'entrée GUI pour poster une vidéo pending.
-        - TIKTOK_DIRECT_POST_ENABLED=1 : ouvre le dialog conforme → Direct Post (post-audit)
-        - sinon (défaut)                : upload INBOX simple sans UX (pré-audit, draft TikTok)
+        Ouvre toujours le dialog conforme TikTok (cohérence UX pour audit).
+        Le mode réel d'upload (DIRECT vs INBOX) dépend de TIKTOK_DIRECT_POST_ENABLED.
         """
-        if os.getenv("TIKTOK_DIRECT_POST_ENABLED", "0").strip() == "1":
-            _open_post_composer(vdir)
-        else:
-            _post_video_inbox_simple(vdir)
+        _open_post_composer(vdir)
 
     def _post_video_inbox_simple(vdir):
         """Upload INBOX direct, sans dialog. Utilisé tant que l'app n'est pas auditée Direct Post."""

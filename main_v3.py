@@ -504,12 +504,18 @@ def _upload_with_account(
     python_exe: str,
     log_path: Path,
     caption: str | None,
+    direct: bool = False,
 ) -> Tuple[bool, str]:
     """
-    Upload automatique = INBOX uniquement (conformité audit TikTok :
-    aucun post DIRECT sans consentement explicite de l'utilisateur).
-    Le post DIRECT se fait depuis le GUI via le dialog "Composer le post".
-    La caption générée est conservée pour réutilisation au moment du post manuel.
+    Upload TikTok.
+    - direct=False : INBOX (brouillon)
+    - direct=True  : DIRECT post avec privacy/interactions par défaut depuis env
+
+    Pour le mode DIRECT auto, les params défaut sont :
+      - privacy   = TIKTOK_AUTO_PUBLISH_PRIVACY (défaut PUBLIC_TO_EVERYONE)
+      - comment   = TIKTOK_AUTO_PUBLISH_ALLOW_COMMENT (défaut 1)
+      - duet      = TIKTOK_AUTO_PUBLISH_ALLOW_DUET (défaut 0)
+      - stitch    = TIKTOK_AUTO_PUBLISH_ALLOW_STITCH (défaut 0)
     """
     token = get_access_token(account_id)
     label = get_account_label(account_id)
@@ -517,9 +523,21 @@ def _upload_with_account(
     def _post(tok: str = token):
         cmd = [python_exe, str(Path(__file__).parent / "pipeline" / "post_tiktok_inbox.py"),
                "--video", final_mp4, "--poll", "--token", tok]
+        if direct:
+            privacy = os.getenv("TIKTOK_AUTO_PUBLISH_PRIVACY", "PUBLIC_TO_EVERYONE").strip()
+            cmd += ["--direct", "--privacy", privacy]
+            if caption:
+                cmd += ["--caption", caption]
+            if os.getenv("TIKTOK_AUTO_PUBLISH_ALLOW_COMMENT", "1").strip() == "1":
+                cmd.append("--allow-comment")
+            if os.getenv("TIKTOK_AUTO_PUBLISH_ALLOW_DUET", "0").strip() == "1":
+                cmd.append("--allow-duet")
+            if os.getenv("TIKTOK_AUTO_PUBLISH_ALLOW_STITCH", "0").strip() == "1":
+                cmd.append("--allow-stitch")
         return run_cmd_capture(cmd, log_path)
 
-    log.info(f"📤 Upload TikTok → {label} (compte {account_id}) — mode INBOX (auto)")
+    mode_label = "DIRECT (auto-publish)" if direct else "INBOX (auto)"
+    log.info(f"📤 Upload TikTok → {label} (compte {account_id}) — mode {mode_label}")
 
     rc, out, err = _post()
     if rc == 0:
@@ -560,9 +578,11 @@ def _upload_with_account(
     return False, "other_failed"
 
 
-def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable, caption: str = None) -> Tuple[bool, str]:
+def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable,
+                                caption: str = None, direct: bool = False) -> Tuple[bool, str]:
     """
     Upload la vidéo sur le compte actif (dernier compte sélectionné dans le GUI).
+    direct=True → publication immédiate sur le profil (post-audit).
     """
     log_path = LOG_DIR / "upload_tiktok.log"
     preflight_mp4_checks(final_mp4)
@@ -575,7 +595,7 @@ def upload_to_tiktok_with_retry(final_mp4: str, python_exe: str = sys.executable
     status = get_rotation_status()
     log.info(f"📱 Compte TikTok actif : {status}")
 
-    return _upload_with_account(final_mp4, account_id, python_exe, log_path, caption)
+    return _upload_with_account(final_mp4, account_id, python_exe, log_path, caption, direct=direct)
 
 
 # =========================================================
@@ -2373,13 +2393,43 @@ def run_pipeline_once() -> Tuple[bool, str]:
     with time_step("10) Generation description + Upload TikTok"):
         caption = generate_tiktok_description(ALIGNED_SEGMENTS_PATH)
 
+        # Trois modes de publication contrôlés par variables d'env :
+        #
+        #   DIRECT_POST_ENABLED | PIPELINE_AUTO_PUBLISH | Comportement
+        #   --------------------|------------------------|-----------------------------
+        #   0                   | (ignoré)               | INBOX auto (brouillon TikTok)
+        #   1                   | 0                      | Stash → validation manuelle via dialog GUI
+        #   1                   | 1                      | DIRECT auto-publish sur le profil
+        direct_post_enabled = os.getenv("TIKTOK_DIRECT_POST_ENABLED", "0").strip() == "1"
+        auto_publish        = os.getenv("TIKTOK_PIPELINE_AUTO_PUBLISH", "0").strip() == "1"
+
+        if direct_post_enabled and not auto_publish:
+            log.info("🛑 Mode DIRECT POST manuel → stockage dans pending_posts/ pour validation via le dialog GUI.")
+            stash_unposted_videos(
+                base_dir=BASE_DIR,
+                raw_video_path=RAW_VIDEO_PATH,
+                final_video_path=VIDEO_FINALE_PATH,
+                reason="awaiting_manual_publish",
+                caption=caption,
+            )
+            with time_step("11) Nettoyage après stash (DIRECT manuel)"):
+                delete_outputs()
+            _cleanup_pipeline_state()
+            dt_all = (time.perf_counter() - t_all) / 60
+            log.info(f"🎉 Pipeline terminé en {dt_all:.3f} min — vidéo en attente de publication manuelle")
+            return True, "awaiting_manual_publish"
+
+        # Modes auto : INBOX (pré-audit) ou DIRECT (auto-publish post-audit)
+        use_direct = direct_post_enabled and auto_publish
+
         if not _refresh_token_ok(sys.executable, LOG_DIR / "upload_tiktok.log"):
             log.warning("⚠️ Refresh pré-upload échoué — tentative quand même")
 
         final_mp4 = VIDEO_FINALE_PATH
         wait_for_internet(label="Post TikTok")
 
-        ok, reason = upload_to_tiktok_with_retry(final_mp4, python_exe=sys.executable, caption=caption)
+        ok, reason = upload_to_tiktok_with_retry(final_mp4, python_exe=sys.executable,
+                                                  caption=caption, direct=use_direct)
 
         if ok:
             log.info("✅ Upload TikTok OK -> archivage standard")
