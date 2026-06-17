@@ -1,0 +1,12 @@
+{
+  "timestamps": [
+    5.0,
+    12.0,
+    20.0,
+    30.0,
+    42.0
+  ],
+  "returncode": 1,
+  "elapsed_s": 4620.4,
+  "stderr_tail": "=218268 fps= 47 q=31.0 size=  182784KiB time=01:00:37.76 bitrate= 411.6kbits/s speed=0.789x    \nframe=218291 fps= 47 q=31.0 size=  182784KiB time=01:00:38.15 bitrate= 411.6kbits/s speed=0.789x    \nframe=218321 fps= 47 q=31.0 size=  182784KiB time=01:00:38.65 bitrate= 411.5kbits/s speed=0.789x    \nframe=218352 fps= 47 q=31.0 size=  182784KiB time=01:00:39.16 bitrate= 411.5kbits/s speed=0.789x    \nframe=218381 fps= 47 q=31.0 size=  182784KiB time=01:00:39.65 bitrate= 411.4kbits/s speed=0.789x    \n"
+}
