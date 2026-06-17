@@ -23,6 +23,28 @@ def strip_accents(s: str) -> str:
     )
 
 BASE_DIR = Path(__file__).parent
+
+
+# ── Singleton : empêche le démarrage de plusieurs GUI en parallèle ──
+def _ensure_single_instance() -> None:
+    """Verrou socket : si un autre gui.py tourne déjà, ferme proprement.
+    Utilise un socket TCP local plutôt qu'un fichier — auto-libéré au crash."""
+    import socket
+    _SINGLETON_PORT = 53951  # choisi pour ne pas collisionner avec l'OAuth (53682)
+    _sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        _sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+        _sock.bind(("127.0.0.1", _SINGLETON_PORT))
+        _sock.listen(1)
+    except OSError:
+        print("[INFO] Une autre instance du GUI Mr Martin est déjà ouverte. Sortie.")
+        sys.exit(0)
+    # Garde la référence pour que le socket vive aussi longtemps que le processus
+    globals()["_SINGLETON_SOCK"] = _sock
+
+
+_ensure_single_instance()
+
 DOWNLOAD_DIR = BASE_DIR / "download"
 PENDING_DIR = BASE_DIR / "pending_posts"
 STATE_DIR = BASE_DIR / "state"
@@ -1039,6 +1061,12 @@ def main(page: ft.Page):
                 style=ft.ButtonStyle(bgcolor=ACCENT, color="white"),
             )
 
+            # Aide visible sous le bouton expliquant pourquoi il est désactivé
+            publish_hint = ft.Text(
+                "⚠ Sélectionne d'abord la confidentialité ci-dessus pour activer le bouton.",
+                size=11, color=WARN_C, visible=True,
+            )
+
             # ── Logique conditionnelle ──
             def _refresh_conditions(e=None):
                 commercial_on = commercial_toggle.value
@@ -1077,11 +1105,37 @@ def main(page: ft.Page):
                     declaration.value = DECLARATION_DEFAULT
 
                 # Bouton Publier — toutes les conditions
-                ok_privacy = bool(privacy_dropdown.value)
+                # En mode INBOX (brouillon), la privacy n'est PAS envoyée à TikTok
+                # (post_tiktok_inbox.py:121 — privacy obligatoire uniquement avec --direct).
+                # Donc ne pas la rendre bloquante pour le bouton "Envoyer en brouillon".
+                ok_privacy = bool(privacy_dropdown.value) if direct_enabled else True
                 ok_commercial = (not commercial_on) or (cb_your_brand.value or cb_branded_content.value)
                 ok_branded_privacy = not branded_with_private
                 ok_duration = (max_dur == 0) or (duration is None) or (duration <= max_dur)
                 publish_btn.disabled = not (ok_privacy and ok_commercial and ok_branded_privacy and ok_duration)
+
+                # Aide dynamique : explique quelle condition manque
+                if not ok_privacy:
+                    publish_hint.value = "⚠ Sélectionne d'abord la confidentialité ci-dessus pour activer le bouton."
+                    publish_hint.color = WARN_C
+                    publish_hint.visible = True
+                elif not ok_commercial:
+                    publish_hint.value = "⚠ Indique si ton contenu fait la promotion d'une marque (case à cocher)."
+                    publish_hint.color = WARN_C
+                    publish_hint.visible = True
+                elif not ok_branded_privacy:
+                    publish_hint.value = "⚠ Branded Content incompatible avec 'Privé'. Change la confidentialité."
+                    publish_hint.color = ERROR_C
+                    publish_hint.visible = True
+                elif not ok_duration:
+                    publish_hint.value = f"⚠ Vidéo trop longue ({duration:.0f}s > max {max_dur}s)."
+                    publish_hint.color = ERROR_C
+                    publish_hint.visible = True
+                else:
+                    publish_hint.visible = False
+
+                _clog("DEBUG", f"_refresh_conditions: btn_disabled={publish_btn.disabled} "
+                                f"privacy={privacy_dropdown.value} commercial={commercial_on}")
                 page.update()
 
             commercial_toggle.on_change = _refresh_conditions
@@ -1089,30 +1143,58 @@ def main(page: ft.Page):
             cb_branded_content.on_change = _refresh_conditions
             privacy_dropdown.on_change = _refresh_conditions
 
+            # Évaluation initiale de l'état du bouton (sinon il reste disabled=True
+            # tant que l'utilisateur n'a touché à aucun widget). En mode INBOX,
+            # ok_privacy=True par défaut → bouton activé immédiatement.
+            try:
+                commercial_on = commercial_toggle.value
+                ok_privacy_init = bool(privacy_dropdown.value) if direct_enabled else True
+                ok_commercial_init = (not commercial_on) or (cb_your_brand.value or cb_branded_content.value)
+                ok_duration_init = (max_dur == 0) or (duration is None) or (duration <= max_dur)
+                publish_btn.disabled = not (ok_privacy_init and ok_commercial_init and ok_duration_init)
+                if not direct_enabled and ok_duration_init:
+                    publish_hint.visible = False
+                _clog("INFO", f"État initial bouton: disabled={publish_btn.disabled} "
+                               f"direct={direct_enabled}")
+            except Exception as ex:
+                _clog("WARNING", f"Init bouton: {ex}")
+
             # ── Action Publier ──
             def _on_publish(e):
-                metadata = {
-                    "title": title_field.value or "",
-                    "privacy_level": privacy_dropdown.value,
-                    "allow_comment": bool(cb_comment.value),
-                    "allow_duet": bool(cb_duet.value),
-                    "allow_stitch": bool(cb_stitch.value),
-                    "brand_organic": bool(commercial_toggle.value and cb_your_brand.value),
-                    "brand_content": bool(commercial_toggle.value and cb_branded_content.value),
-                }
-                # Sauve la caption éditée pour les retries futurs
+                _clog("INFO", f"_on_publish CLIQUÉ — direct={direct_enabled} "
+                               f"privacy={privacy_dropdown.value}")
                 try:
-                    if metadata["title"]:
-                        (vdir / "caption.txt").write_text(metadata["title"], encoding="utf-8")
-                except Exception:
-                    pass
-                _close()
-                if direct_enabled:
-                    _execute_direct_post(vdir, metadata)
-                else:
-                    # Pré-audit : upload INBOX. Les métadonnées sont sauvées dans
-                    # caption.txt et serviront quand TIKTOK_DIRECT_POST_ENABLED=1.
-                    _post_video_inbox_simple(vdir)
+                    metadata = {
+                        "title": title_field.value or "",
+                        "privacy_level": privacy_dropdown.value,
+                        "allow_comment": bool(cb_comment.value),
+                        "allow_duet": bool(cb_duet.value),
+                        "allow_stitch": bool(cb_stitch.value),
+                        "brand_organic": bool(commercial_toggle.value and cb_your_brand.value),
+                        "brand_content": bool(commercial_toggle.value and cb_branded_content.value),
+                    }
+                    # Sauve la caption éditée pour les retries futurs
+                    try:
+                        if metadata["title"]:
+                            (vdir / "caption.txt").write_text(metadata["title"], encoding="utf-8")
+                    except Exception:
+                        pass
+                    _close()
+                    if direct_enabled:
+                        _clog("INFO", "→ _execute_direct_post()")
+                        _execute_direct_post(vdir, metadata)
+                    else:
+                        # Pré-audit : upload INBOX. Les métadonnées sont sauvées dans
+                        # caption.txt et serviront quand TIKTOK_DIRECT_POST_ENABLED=1.
+                        _clog("INFO", "→ _post_video_inbox_simple()")
+                        _post_video_inbox_simple(vdir)
+                except Exception as ex:
+                    import traceback
+                    _clog("ERROR", f"_on_publish exception: {ex}\n{traceback.format_exc()}")
+                    try:
+                        toast(f"Erreur publication: {ex}", "error")
+                    except Exception:
+                        pass
 
             publish_btn.on_click = _on_publish
 
@@ -1131,6 +1213,7 @@ def main(page: ft.Page):
                 processing_note,
                 declaration,
                 mode_indicator,
+                publish_hint,
             ], spacing=10, scroll=ft.ScrollMode.AUTO, tight=False)
 
             def upd():
@@ -1826,6 +1909,44 @@ def main(page: ft.Page):
         )
         _open_dialog(dlg)
 
+    # ── Helpers de formatage (partagés par le dashboard) ─────────────────────
+    def _fmt_num(n):
+        """1234 → '1.2K', 1234567 → '1.2M'."""
+        if n is None:
+            return "—"
+        try:
+            n = int(n)
+        except Exception:
+            return "—"
+        if abs(n) >= 1_000_000:
+            return f"{n/1_000_000:.1f}M".replace(".0M", "M")
+        if abs(n) >= 1_000:
+            return f"{n/1_000:.1f}K".replace(".0K", "K")
+        return f"{n:,}".replace(",", " ")
+
+    def _fmt_pct(num, denom):
+        if not denom:
+            return "—"
+        return f"{(num / denom * 100):.1f}%"
+
+    def _trend(curr, prev, fmt=_fmt_num):
+        """Renvoie (text, color, icon) comparant curr à prev."""
+        if not prev:
+            return (None, None, None)
+        delta = curr - prev
+        if delta == 0:
+            return ("=", MUTED, ft.Icons.REMOVE)
+        pct = (delta / prev) * 100 if prev else 0
+        if delta > 0:
+            return (f"+{pct:.0f}%", SUCCESS, ft.Icons.ARROW_UPWARD)
+        return (f"{pct:.0f}%", ERROR_C, ft.Icons.ARROW_DOWNWARD)
+
+    # État global persistant pour le dashboard (période + onglet)
+    _stats_state = globals().setdefault("_stats_state", {"period": 30, "tab": 0,
+                                                          "video_sort": "views",
+                                                          "video_search": "",
+                                                          "tmpl_filter": None})
+
     def show_stats(e=None):
         if not HISTORY_FILE.exists():
             toast("Aucun historique d'upload trouvé", "warning")
@@ -1836,207 +1957,1054 @@ def main(page: ft.Page):
             toast("Erreur lecture historique", "error")
             return
 
-        from collections import defaultdict
+        from collections import defaultdict, Counter
         import datetime as _dt
+        import csv as _csv
+        import io as _io
+        import webbrowser as _wb
 
         today = _dt.date.today()
+        now   = _dt.datetime.now()
 
-        # ── Métriques ────────────────────────────────────────────────────────
-        ok_entries   = [e for e in history if e.get("upload_ok")]
-        fail_entries = [e for e in history if not e.get("upload_ok")]
-        total        = len(history)
-        total_ok     = len(ok_entries)
-        pct_ok       = int(total_ok / total * 100) if total else 0
-        with_stats   = [e for e in ok_entries if e.get("view_count") is not None]
-        total_views  = sum(e.get("view_count") or 0 for e in with_stats)
-        active_days  = len({e["timestamp"][:10] for e in ok_entries if e.get("timestamp")})
+        # ── Filtre par période ───────────────────────────────────────────────
+        period = _stats_state["period"]  # 7, 30, 90 ou 0 (tout)
 
-        # Uploads par jour — 30 derniers jours
-        days_range = [today - _dt.timedelta(days=i) for i in range(29, -1, -1)]
-        by_day: dict = defaultdict(int)
+        def _in_period(entry, p):
+            if not p:
+                return True
+            ts = entry.get("timestamp", "")
+            try:
+                d = _dt.datetime.fromisoformat(ts).date()
+            except Exception:
+                return False
+            return (today - d).days < p
+
+        def _prev_period(entry, p):
+            if not p:
+                return False
+            ts = entry.get("timestamp", "")
+            try:
+                d = _dt.datetime.fromisoformat(ts).date()
+            except Exception:
+                return False
+            delta = (today - d).days
+            return p <= delta < 2 * p
+
+        history_period = [e for e in history if _in_period(e, period)]
+        history_prev   = [e for e in history if _prev_period(e, period)]
+
+        # ── Métriques globales (sur la période) ──────────────────────────────
+        ok_entries    = [e for e in history_period if e.get("upload_ok")]
+        fail_entries  = [e for e in history_period if not e.get("upload_ok")]
+        total         = len(history_period)
+        total_ok      = len(ok_entries)
+        pct_ok        = int(total_ok / total * 100) if total else 0
+        with_stats    = [e for e in ok_entries if e.get("view_count") is not None]
+        total_views   = sum(e.get("view_count")    or 0 for e in with_stats)
+        total_likes   = sum(e.get("like_count")    or 0 for e in with_stats)
+        total_comms   = sum(e.get("comment_count") or 0 for e in with_stats)
+        total_shares  = sum(e.get("share_count")   or 0 for e in with_stats)
+        avg_views     = (total_views // len(with_stats)) if with_stats else 0
+        median_views  = 0
+        if with_stats:
+            sv = sorted(e.get("view_count") or 0 for e in with_stats)
+            median_views = sv[len(sv) // 2]
+        max_view_entry = max(with_stats, key=lambda x: x.get("view_count") or 0,
+                             default=None)
+        engagement = 0.0
+        if total_views:
+            engagement = (total_likes + total_comms + total_shares) / total_views * 100
+
+        # ── Métriques période précédente (pour les tendances) ────────────────
+        prev_ok        = [e for e in history_prev if e.get("upload_ok")]
+        prev_views     = sum((e.get("view_count") or 0) for e in prev_ok
+                             if e.get("view_count") is not None)
+        prev_likes     = sum((e.get("like_count") or 0) for e in prev_ok
+                             if e.get("like_count") is not None)
+        prev_uploads   = len(prev_ok)
+
+        # ── Streak (sur l'historique complet, pas filtré) ────────────────────
+        all_dates = {e["timestamp"][:10] for e in history
+                     if e.get("upload_ok") and e.get("timestamp")}
+        streak = 0
+        cur = today
+        while cur.isoformat() in all_dates:
+            streak += 1
+            cur -= _dt.timedelta(days=1)
+
+        # Best streak historique
+        best_streak = 0
+        if all_dates:
+            sorted_d = sorted(all_dates)
+            run = 1
+            best_streak = 1
+            for i in range(1, len(sorted_d)):
+                d0 = _dt.date.fromisoformat(sorted_d[i-1])
+                d1 = _dt.date.fromisoformat(sorted_d[i])
+                if (d1 - d0).days == 1:
+                    run += 1
+                    best_streak = max(best_streak, run)
+                else:
+                    run = 1
+
+        active_days = len({e["timestamp"][:10] for e in ok_entries if e.get("timestamp")})
+
+        # ── Données pour graphiques (sur la période) ─────────────────────────
+        bar_days = period if period else 30
+        days_range = [today - _dt.timedelta(days=i) for i in range(bar_days - 1, -1, -1)]
+        by_day_uploads: dict = defaultdict(int)
+        by_day_views:   dict = defaultdict(int)
         for e in ok_entries:
-            by_day[e.get("timestamp", "")[:10]] += 1
-        day_counts = [by_day[d.isoformat()] for d in days_range]
+            d = e.get("timestamp", "")[:10]
+            by_day_uploads[d] += 1
+            by_day_views[d] += e.get("view_count") or 0
+        day_counts = [by_day_uploads[d.isoformat()] for d in days_range]
+        day_views  = [by_day_views[d.isoformat()]   for d in days_range]
         max_day    = max(day_counts, default=1) or 1
+        max_dview  = max(day_views,  default=1) or 1
 
-        # Par template
-        by_template: dict = defaultdict(int)
+        # Par template (uploads + perf)
+        by_template_uploads: dict = defaultdict(int)
+        by_template_views:   dict = defaultdict(list)
+        by_template_eng:     dict = defaultdict(list)
         for e in ok_entries:
             tmpl = (e.get("prompt_template") or "(inconnu)").replace(".txt", "")
-            by_template[tmpl] += 1
-        sorted_templates = sorted(by_template.items(), key=lambda x: x[1], reverse=True)
+            by_template_uploads[tmpl] += 1
+            if e.get("view_count") is not None:
+                vc = e.get("view_count") or 0
+                by_template_views[tmpl].append(vc)
+                if vc:
+                    eng = ((e.get("like_count") or 0) + (e.get("comment_count") or 0)
+                           + (e.get("share_count") or 0)) / vc * 100
+                    by_template_eng[tmpl].append(eng)
+
+        sorted_templates = sorted(by_template_uploads.items(),
+                                  key=lambda x: x[1], reverse=True)
         max_tmpl = sorted_templates[0][1] if sorted_templates else 1
 
-        # ── KPI cards ────────────────────────────────────────────────────────
-        def _kpi(icon, label, value, color=PRIMARY, sub=None):
+        # Heatmap : moyenne par jour de semaine × heure
+        hour_buckets = [(0, 6), (6, 12), (12, 18), (18, 24)]
+        weekdays_fr = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+        heat: dict = defaultdict(lambda: {"count": 0, "views": 0})
+        for e in ok_entries:
+            ts = e.get("timestamp", "")
+            try:
+                d = _dt.datetime.fromisoformat(ts)
+            except Exception:
+                continue
+            wd = d.weekday()
+            for bi, (h0, h1) in enumerate(hour_buckets):
+                if h0 <= d.hour < h1:
+                    heat[(wd, bi)]["count"] += 1
+                    heat[(wd, bi)]["views"] += e.get("view_count") or 0
+                    break
+        max_heat = max((v["count"] for v in heat.values()), default=1) or 1
+
+        # Meilleure heure / meilleur jour (par vues moyennes)
+        by_hour_views = defaultdict(list)
+        by_wd_views   = defaultdict(list)
+        for e in ok_entries:
+            if e.get("view_count") is None:
+                continue
+            try:
+                d = _dt.datetime.fromisoformat(e["timestamp"])
+            except Exception:
+                continue
+            by_hour_views[d.hour].append(e.get("view_count") or 0)
+            by_wd_views[d.weekday()].append(e.get("view_count") or 0)
+
+        best_hour = None
+        if by_hour_views:
+            best_hour = max(by_hour_views.items(),
+                            key=lambda x: sum(x[1]) / max(1, len(x[1])))[0]
+        best_wd = None
+        if by_wd_views:
+            best_wd = max(by_wd_views.items(),
+                          key=lambda x: sum(x[1]) / max(1, len(x[1])))[0]
+
+        # Échecs par raison
+        fail_reasons: Counter = Counter()
+        for f in fail_entries:
+            fail_reasons[f.get("reason") or "inconnu"] += 1
+
+        # Date dernier sync
+        last_sync = max((e.get("stats_fetched_at") or "" for e in history), default="")
+
+        # ──────────────────────────────────────────────────────────────────────
+        # Composants réutilisables
+        # ──────────────────────────────────────────────────────────────────────
+        def _kpi(icon, label, value, color=PRIMARY, sub=None, trend=None):
+            """KPI card avec valeur + sous-texte + indicateur de tendance optionnel."""
+            top_row = [
+                ft.Icon(icon, size=13, color=color),
+                ft.Text(label, size=9, color=MUTED, weight=ft.FontWeight.W_500),
+            ]
+            if trend and trend[0]:
+                top_row.append(ft.Container(expand=True))
+                top_row.append(ft.Row([
+                    ft.Icon(trend[2], size=11, color=trend[1]),
+                    ft.Text(trend[0], size=9, color=trend[1],
+                            weight=ft.FontWeight.BOLD),
+                ], spacing=2))
             return ft.Container(
                 content=ft.Column([
-                    ft.Row([ft.Icon(icon, size=13, color=color),
-                            ft.Text(label, size=9, color=MUTED)], spacing=5),
-                    ft.Text(str(value), size=22, weight=ft.FontWeight.BOLD, color=color),
-                    ft.Text(sub, size=9, color=OUTLINE) if sub else ft.Container(height=2),
+                    ft.Row(top_row, spacing=5),
+                    ft.Text(str(value), size=20, weight=ft.FontWeight.BOLD, color=color),
+                    ft.Text(sub or "", size=9, color=OUTLINE),
                 ], spacing=3, tight=True),
                 bgcolor=SURFACE_HIGH, border=ft.Border.all(1, BORDER),
-                border_radius=10, padding=12, expand=True,
+                border_radius=10, padding=11, expand=True,
             )
 
-        kpi_row = ft.Row([
-            _kpi(ft.Icons.UPLOAD_FILE, "UPLOADS", total_ok, PRIMARY,
-                 f"{len(fail_entries)} échec(s)"),
-            _kpi(ft.Icons.VERIFIED, "SUCCÈS", f"{pct_ok}%", SUCCESS),
-            _kpi(ft.Icons.CALENDAR_MONTH, "JOURS ACTIFS", active_days, ACCENT),
-            _kpi(ft.Icons.VISIBILITY_OUTLINED, "VUES TOTALES",
-                 f"{total_views:,}" if with_stats else "—", WARN_C,
-                 f"{len(with_stats)} vidéos trackées" if with_stats else "stats en attente"),
+        def _section_title(txt, extra=None):
+            row = [
+                ft.Text(txt, size=9, weight=ft.FontWeight.BOLD, color=MUTED),
+                ft.Container(expand=True),
+            ]
+            if extra:
+                row.append(extra)
+            return ft.Row(row)
+
+        # ──────────────────────────────────────────────────────────────────────
+        # Sélecteur de période (chips)
+        # ──────────────────────────────────────────────────────────────────────
+        def _set_period(p):
+            _stats_state["period"] = p
+            _close_dialog(dlg_ref["v"])
+            show_stats()
+
+        def _chip(label, p):
+            active = (_stats_state["period"] == p)
+            return ft.Container(
+                content=ft.Text(label, size=10,
+                                color=ON_PRIMARY if active else ON_SURFACE,
+                                weight=ft.FontWeight.BOLD if active else ft.FontWeight.W_500),
+                bgcolor=PRIMARY if active else SURFACE_HIGH,
+                border=ft.Border.all(1, PRIMARY if active else BORDER),
+                border_radius=14,
+                padding=ft.Padding.symmetric(horizontal=11, vertical=5),
+                on_click=lambda ev, _p=p: _set_period(_p),
+                ink=True,
+            )
+
+        period_chips = ft.Row([
+            _chip("7j", 7), _chip("30j", 30), _chip("90j", 90), _chip("Tout", 0),
+        ], spacing=6)
+
+        # ──────────────────────────────────────────────────────────────────────
+        # KPI row (8 indicateurs en 2 rangées de 4)
+        # ──────────────────────────────────────────────────────────────────────
+        kpi_grid = ft.Column([
+            ft.Row([
+                _kpi(ft.Icons.UPLOAD_FILE, "UPLOADS", total_ok, PRIMARY,
+                     f"{len(fail_entries)} échec(s)",
+                     trend=_trend(total_ok, prev_uploads)),
+                _kpi(ft.Icons.VERIFIED, "TAUX SUCCÈS", f"{pct_ok}%", SUCCESS,
+                     f"sur {total} tentatives"),
+                _kpi(ft.Icons.VISIBILITY_OUTLINED, "VUES TOTALES",
+                     _fmt_num(total_views) if with_stats else "—", WARN_C,
+                     f"{len(with_stats)} vidéos trackées" if with_stats else "stats en attente",
+                     trend=_trend(total_views, prev_views) if prev_views else None),
+                _kpi(ft.Icons.TRENDING_UP, "VUES / VIDÉO",
+                     _fmt_num(avg_views) if with_stats else "—", ACCENT,
+                     f"médiane {_fmt_num(median_views)}" if with_stats else None),
+            ], spacing=8),
+            ft.Row([
+                _kpi(ft.Icons.FAVORITE_OUTLINE, "LIKES",
+                     _fmt_num(total_likes) if with_stats else "—", ERROR_C,
+                     f"{_fmt_pct(total_likes, total_views)} taux"),
+                _kpi(ft.Icons.CHAT_BUBBLE_OUTLINE, "COMMENTAIRES",
+                     _fmt_num(total_comms) if with_stats else "—", "#60a5fa",
+                     f"{_fmt_pct(total_comms, total_views)} taux"),
+                _kpi(ft.Icons.AUTO_GRAPH, "ENGAGEMENT",
+                     f"{engagement:.2f}%" if with_stats else "—", "#f472b6",
+                     "likes + comm + partages / vues"),
+                _kpi(ft.Icons.LOCAL_FIRE_DEPARTMENT, "STREAK",
+                     f"{streak} j", "#fb923c",
+                     f"record {best_streak} j" if best_streak else None),
+            ], spacing=8),
         ], spacing=8)
 
-        # ── Activity bar chart ────────────────────────────────────────────────
-        BAR_H, BAR_W = 44, 17
+        # ──────────────────────────────────────────────────────────────────────
+        # Activité — combo bars (uploads) + ligne (vues)
+        # ──────────────────────────────────────────────────────────────────────
+        max_bars_visible = min(bar_days, 60)
+        visible_range = days_range[-max_bars_visible:]
+        visible_counts = day_counts[-max_bars_visible:]
+        visible_views  = day_views[-max_bars_visible:]
+        BAR_H = 70
+        BAR_W = max(6, min(18, int(560 / max(1, len(visible_range)))))
+
         bars = []
-        for d, cnt in zip(days_range, day_counts):
+        for d, cnt, vw in zip(visible_range, visible_counts, visible_views):
             h     = max(3, int(cnt / max_day * BAR_H)) if cnt else 3
             color = ACCENT if d == today else (PRIMARY if cnt > 0 else SURFACE_TOP)
+            tip = f"{d.strftime('%a %d %b')}\n{cnt} upload(s)"
+            if vw:
+                tip += f"\n{_fmt_num(vw)} vues"
             bars.append(ft.Column([
                 ft.Container(
-                    width=BAR_W, height=h, bgcolor=color,
-                    border_radius=3,
-                    tooltip=f"{d.strftime('%d %b')}: {cnt}",
+                    width=BAR_W - 2, height=h, bgcolor=color,
+                    border_radius=3, tooltip=tip,
                 ),
             ], alignment=ft.MainAxisAlignment.END,
+               horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+               width=BAR_W))
+
+        # Ligne vues (sparkline overlay simulée par points colorés)
+        view_dots = []
+        for d, vw in zip(visible_range, visible_views):
+            y = max(2, int(vw / max_dview * BAR_H)) if vw else 0
+            view_dots.append(ft.Column([
+                ft.Container(height=BAR_H - y),
+                ft.Container(width=4, height=4, bgcolor=WARN_C, border_radius=2,
+                             tooltip=f"{d.strftime('%d/%m')}: {_fmt_num(vw)} vues") if vw else
+                ft.Container(width=4, height=4),
+            ], width=BAR_W, alignment=ft.MainAxisAlignment.START,
                horizontal_alignment=ft.CrossAxisAlignment.CENTER))
 
-        def _dlabel(d):
-            return ft.Text(d.strftime("%d/%m"), size=8, color=OUTLINE)
-
         activity_section = ft.Column([
-            ft.Row([
-                ft.Text("ACTIVITÉ — 30 DERNIERS JOURS",
-                        size=9, weight=ft.FontWeight.BOLD, color=MUTED),
-                ft.Container(expand=True),
-                ft.Text(f"max {max_day}/j", size=9, color=OUTLINE),
+            _section_title(
+                f"ACTIVITÉ — {bar_days} DERNIERS JOURS",
+                ft.Row([
+                    ft.Container(width=8, height=8, bgcolor=PRIMARY, border_radius=2),
+                    ft.Text("uploads", size=9, color=OUTLINE),
+                    ft.Container(width=8),
+                    ft.Container(width=4, height=4, bgcolor=WARN_C, border_radius=2),
+                    ft.Text("vues", size=9, color=OUTLINE),
+                ], spacing=4)
+            ),
+            ft.Stack([
+                ft.Container(content=ft.Row(bars, spacing=2,
+                                            alignment=ft.MainAxisAlignment.START),
+                             height=BAR_H + 4),
+                ft.Container(content=ft.Row(view_dots, spacing=2,
+                                            alignment=ft.MainAxisAlignment.START),
+                             height=BAR_H + 4),
             ]),
-            ft.Container(content=ft.Row(bars, spacing=2), height=BAR_H + 4),
-            ft.Row([_dlabel(days_range[0]), ft.Container(expand=True),
-                    _dlabel(days_range[14]),  ft.Container(expand=True),
-                    _dlabel(days_range[-1])]),
-        ], spacing=4)
+            ft.Row([
+                ft.Text(visible_range[0].strftime("%d/%m"), size=8, color=OUTLINE),
+                ft.Container(expand=True),
+                ft.Text(visible_range[len(visible_range)//2].strftime("%d/%m"),
+                        size=8, color=OUTLINE),
+                ft.Container(expand=True),
+                ft.Text(visible_range[-1].strftime("%d/%m"), size=8, color=OUTLINE),
+            ]),
+        ], spacing=6)
 
-        # ── Template bars ─────────────────────────────────────────────────────
-        tmpl_items = []
-        for tmpl, cnt in sorted_templates[:7]:
-            fill = int(cnt / max_tmpl * 270)
-            tmpl_items.append(ft.Column([
+        # ──────────────────────────────────────────────────────────────────────
+        # Best moments
+        # ──────────────────────────────────────────────────────────────────────
+        best_panel = ft.Container(
+            content=ft.Column([
+                _section_title("MEILLEURS MOMENTS"),
+                ft.Container(height=4),
                 ft.Row([
-                    ft.Text(tmpl[:26], size=10, color=ON_SURFACE, expand=True),
-                    ft.Text(str(cnt), size=10, color=PRIMARY,
-                            weight=ft.FontWeight.BOLD, width=20,
-                            text_align=ft.TextAlign.RIGHT),
-                ]),
+                    ft.Icon(ft.Icons.CALENDAR_TODAY, size=14, color=SUCCESS),
+                    ft.Text("Meilleur jour : ", size=11, color=ON_SURFACE),
+                    ft.Text(weekdays_fr[best_wd] if best_wd is not None else "—",
+                            size=11, color=SUCCESS, weight=ft.FontWeight.BOLD),
+                    ft.Container(expand=True),
+                    ft.Text(f"{_fmt_num(int(sum(by_wd_views[best_wd]) / max(1, len(by_wd_views[best_wd]))))} vues/vid"
+                            if best_wd is not None else "",
+                            size=10, color=OUTLINE),
+                ], spacing=6),
                 ft.Row([
-                    ft.Container(width=fill, height=4, bgcolor=ACCENT, border_radius=2),
-                    ft.Container(width=270 - fill, height=4,
-                                 bgcolor=SURFACE_TOP, border_radius=2),
-                ], spacing=0),
-            ], spacing=3, tight=True))
+                    ft.Icon(ft.Icons.SCHEDULE, size=14, color=WARN_C),
+                    ft.Text("Meilleure heure : ", size=11, color=ON_SURFACE),
+                    ft.Text(f"{best_hour:02d}h" if best_hour is not None else "—",
+                            size=11, color=WARN_C, weight=ft.FontWeight.BOLD),
+                    ft.Container(expand=True),
+                    ft.Text(f"{_fmt_num(int(sum(by_hour_views[best_hour]) / max(1, len(by_hour_views[best_hour]))))} vues/vid"
+                            if best_hour is not None else "",
+                            size=10, color=OUTLINE),
+                ], spacing=6),
+                ft.Row([
+                    ft.Icon(ft.Icons.WHATSHOT, size=14, color=ERROR_C),
+                    ft.Text("Meilleure vidéo : ", size=11, color=ON_SURFACE),
+                    ft.Text(
+                        _fmt_num(max_view_entry.get("view_count")) if max_view_entry else "—",
+                        size=11, color=ERROR_C, weight=ft.FontWeight.BOLD),
+                    ft.Container(expand=True),
+                    ft.Text(
+                        (max_view_entry.get("prompt_template") or "").replace(".txt", "")[:18]
+                        if max_view_entry else "",
+                        size=10, color=OUTLINE),
+                ], spacing=6),
+            ], spacing=6),
+            bgcolor=SURFACE_HIGH, border=ft.Border.all(1, BORDER),
+            border_radius=10, padding=12,
+        )
 
-        prompt_col = ft.Column([
-            ft.Text("PROMPTS UTILISÉS", size=9, weight=ft.FontWeight.BOLD, color=MUTED),
-            ft.Container(height=2),
-            *tmpl_items,
-        ], spacing=8)
+        # ──────────────────────────────────────────────────────────────────────
+        # Heatmap weekday × tranche horaire
+        # ──────────────────────────────────────────────────────────────────────
+        def _heat_color(val):
+            if not val:
+                return SURFACE_TOP
+            ratio = val / max_heat
+            if ratio > 0.66:
+                return ACCENT
+            if ratio > 0.33:
+                return PRIMARY
+            return ACCENT_DIM
 
-        # ── Top vidéos ────────────────────────────────────────────────────────
-        if with_stats:
-            top = sorted(with_stats,
-                         key=lambda e: e.get("view_count") or 0, reverse=True)[:5]
-            vid_items = []
-            for i, e in enumerate(top, 1):
-                tmpl  = (e.get("prompt_template") or "?").replace(".txt", "")[:18]
-                views = e.get("view_count") or 0
-                likes = e.get("like_count") or 0
-                vid_items.append(ft.Container(
-                    content=ft.Row([
-                        ft.Text(f"#{i}", size=10, color=MUTED, width=18),
-                        ft.Text(e.get("timestamp", "")[:10], size=9,
-                                color=OUTLINE, width=72, font_family="Cascadia Code"),
-                        ft.Text(tmpl, size=10, color=ON_SURFACE, expand=True),
-                        ft.Text(f"{views:,}", size=10, color=PRIMARY),
-                        ft.Text(f"♥ {likes:,}", size=9, color=ERROR_C),
-                    ], spacing=6),
-                    bgcolor=SURFACE_HIGH, border_radius=6,
-                    padding=ft.Padding.symmetric(horizontal=8, vertical=6),
+        heat_rows = []
+        # Header (tranches horaires)
+        heat_rows.append(ft.Row([
+            ft.Container(width=34),
+            *[ft.Container(
+                content=ft.Text(f"{h0:02d}-{h1:02d}", size=8, color=OUTLINE,
+                                text_align=ft.TextAlign.CENTER),
+                width=46,
+              ) for h0, h1 in hour_buckets],
+        ], spacing=4))
+        for wd in range(7):
+            cells = []
+            for bi in range(len(hour_buckets)):
+                c = heat[(wd, bi)]["count"]
+                v = heat[(wd, bi)]["views"]
+                tip = f"{weekdays_fr[wd]} {hour_buckets[bi][0]:02d}h–{hour_buckets[bi][1]:02d}h\n{c} vidéo(s)"
+                if v:
+                    tip += f"\n{_fmt_num(v)} vues total"
+                cells.append(ft.Container(
+                    content=ft.Text(str(c) if c else "·", size=10,
+                                    color=ON_SURFACE if c else MUTED,
+                                    weight=ft.FontWeight.BOLD if c else ft.FontWeight.NORMAL,
+                                    text_align=ft.TextAlign.CENTER),
+                    width=46, height=26,
+                    bgcolor=_heat_color(c),
+                    border_radius=4,
+                    alignment=ft.Alignment.CENTER,
+                    tooltip=tip,
                 ))
-            video_col = ft.Column([
-                ft.Text("TOP 5 VIDÉOS", size=9,
-                        weight=ft.FontWeight.BOLD, color=MUTED),
-                ft.Container(height=2),
-                *vid_items,
-            ], spacing=5)
-        else:
-            video_col = ft.Column([
-                ft.Text("TOP VIDÉOS", size=9,
-                        weight=ft.FontWeight.BOLD, color=MUTED),
+            heat_rows.append(ft.Row([
+                ft.Container(content=ft.Text(weekdays_fr[wd], size=10, color=OUTLINE),
+                             width=34),
+                *cells,
+            ], spacing=4))
+
+        heat_panel = ft.Container(
+            content=ft.Column([
+                _section_title("RÉPARTITION JOUR × HEURE"),
+                ft.Container(height=4),
+                *heat_rows,
+            ], spacing=3),
+            bgcolor=SURFACE_HIGH, border=ft.Border.all(1, BORDER),
+            border_radius=10, padding=12,
+        )
+
+        # ──────────────────────────────────────────────────────────────────────
+        # ONGLET 2 — PROMPTS : tableau avec uploads / vues moy / engagement
+        # ──────────────────────────────────────────────────────────────────────
+        tmpl_rows = []
+        # Header
+        tmpl_rows.append(ft.Container(
+            content=ft.Row([
+                ft.Text("PROMPT", size=9, color=MUTED,
+                        weight=ft.FontWeight.BOLD, expand=True),
+                ft.Text("VIDÉOS", size=9, color=MUTED,
+                        weight=ft.FontWeight.BOLD, width=55,
+                        text_align=ft.TextAlign.RIGHT),
+                ft.Text("VUES MOY.", size=9, color=MUTED,
+                        weight=ft.FontWeight.BOLD, width=75,
+                        text_align=ft.TextAlign.RIGHT),
+                ft.Text("MAX", size=9, color=MUTED,
+                        weight=ft.FontWeight.BOLD, width=55,
+                        text_align=ft.TextAlign.RIGHT),
+                ft.Text("ENGAG.", size=9, color=MUTED,
+                        weight=ft.FontWeight.BOLD, width=58,
+                        text_align=ft.TextAlign.RIGHT),
+            ], spacing=4),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+        ))
+        # Tri par vues moyennes (descendant), fallback uploads
+        def _tmpl_score(t):
+            vs = by_template_views.get(t, [])
+            return (sum(vs) / len(vs)) if vs else -1
+
+        all_tmpls = sorted(by_template_uploads.keys(),
+                           key=lambda t: (_tmpl_score(t), by_template_uploads[t]),
+                           reverse=True)
+
+        max_avg = max((_tmpl_score(t) for t in all_tmpls), default=1)
+        if max_avg <= 0:
+            max_avg = 1
+
+        for tmpl in all_tmpls:
+            cnt = by_template_uploads[tmpl]
+            vs  = by_template_views.get(tmpl, [])
+            es  = by_template_eng.get(tmpl, [])
+            avg = int(sum(vs) / len(vs)) if vs else 0
+            mx  = max(vs) if vs else 0
+            eng = (sum(es) / len(es)) if es else 0
+            bar_pct = int(avg / max_avg * 100) if max_avg else 0
+            tmpl_rows.append(ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Text(tmpl[:32], size=11, color=ON_SURFACE, expand=True),
+                        ft.Text(str(cnt), size=11, color=PRIMARY,
+                                width=55, text_align=ft.TextAlign.RIGHT,
+                                weight=ft.FontWeight.BOLD),
+                        ft.Text(_fmt_num(avg) if avg else "—",
+                                size=11, color=WARN_C, width=75,
+                                text_align=ft.TextAlign.RIGHT),
+                        ft.Text(_fmt_num(mx) if mx else "—",
+                                size=10, color=OUTLINE, width=55,
+                                text_align=ft.TextAlign.RIGHT),
+                        ft.Text(f"{eng:.1f}%" if eng else "—",
+                                size=10, color="#f472b6", width=58,
+                                text_align=ft.TextAlign.RIGHT),
+                    ], spacing=4),
+                    ft.Row([
+                        ft.Container(height=3, width=max(2, int(bar_pct * 4.6)),
+                                     bgcolor=ACCENT, border_radius=2),
+                        ft.Container(height=3, expand=True,
+                                     bgcolor=SURFACE_TOP, border_radius=2),
+                    ], spacing=0),
+                ], spacing=4),
+                bgcolor=SURFACE_HIGH, border_radius=8,
+                padding=ft.Padding.symmetric(horizontal=10, vertical=8),
+            ))
+
+        prompts_tab = ft.Column(
+            tmpl_rows if all_tmpls else [
+                ft.Container(
+                    content=ft.Text("Aucun upload sur cette période.",
+                                    size=12, color=OUTLINE,
+                                    text_align=ft.TextAlign.CENTER),
+                    alignment=ft.Alignment.CENTER, padding=30,
+                ),
+            ],
+            spacing=6, scroll=ft.ScrollMode.AUTO,
+        )
+
+        # ──────────────────────────────────────────────────────────────────────
+        # ONGLET 3 — VIDÉOS : recherche + tri + tableau
+        # ──────────────────────────────────────────────────────────────────────
+        def _video_sort_key(entry):
+            mode = _stats_state["video_sort"]
+            if mode == "likes":
+                return entry.get("like_count") or 0
+            if mode == "comments":
+                return entry.get("comment_count") or 0
+            if mode == "shares":
+                return entry.get("share_count") or 0
+            if mode == "engagement":
+                vc = entry.get("view_count") or 0
+                if not vc:
+                    return 0
+                return ((entry.get("like_count") or 0) + (entry.get("comment_count") or 0)
+                        + (entry.get("share_count") or 0)) / vc
+            if mode == "date":
+                return entry.get("timestamp") or ""
+            return entry.get("view_count") or 0
+
+        search = _stats_state["video_search"].strip().lower()
+
+        def _vid_match(e):
+            if not search:
+                return True
+            blob = " ".join([
+                str(e.get("title") or ""),
+                str(e.get("prompt_template") or ""),
+                str(e.get("timestamp") or ""),
+                str(e.get("video_id") or ""),
+            ]).lower()
+            return search in blob
+
+        filtered_vids = [e for e in ok_entries if _vid_match(e)]
+        sorted_vids = sorted(filtered_vids, key=_video_sort_key, reverse=True)
+
+        def _set_sort(mode):
+            _stats_state["video_sort"] = mode
+            _close_dialog(dlg_ref["v"])
+            show_stats()
+
+        def _sort_chip(label, mode):
+            active = (_stats_state["video_sort"] == mode)
+            return ft.Container(
+                content=ft.Text(label, size=10,
+                                color=ON_PRIMARY if active else ON_SURFACE,
+                                weight=ft.FontWeight.BOLD if active else ft.FontWeight.W_500),
+                bgcolor=PRIMARY if active else SURFACE_HIGH,
+                border=ft.Border.all(1, PRIMARY if active else BORDER),
+                border_radius=12,
+                padding=ft.Padding.symmetric(horizontal=10, vertical=4),
+                on_click=lambda ev, _m=mode: _set_sort(_m),
+                ink=True,
+            )
+
+        search_field = ft.TextField(
+            value=_stats_state["video_search"],
+            hint_text="Rechercher titre, prompt, ID...",
+            prefix_icon=ft.Icons.SEARCH,
+            dense=True,
+            content_padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+            text_size=11,
+            border_color=BORDER,
+            focused_border_color=PRIMARY,
+            on_submit=lambda ev: (_stats_state.update({"video_search": ev.control.value}),
+                                  _close_dialog(dlg_ref["v"]), show_stats()),
+            expand=True,
+        )
+
+        def _open_tiktok(video_id):
+            if not video_id:
+                return
+            _wb.open(f"https://www.tiktok.com/@_/video/{video_id}")
+
+        vid_rows = [
+            ft.Container(
+                content=ft.Row([
+                    ft.Text("#", size=9, color=MUTED, width=24,
+                            weight=ft.FontWeight.BOLD),
+                    ft.Text("DATE", size=9, color=MUTED, width=80,
+                            weight=ft.FontWeight.BOLD),
+                    ft.Text("PROMPT", size=9, color=MUTED, expand=True,
+                            weight=ft.FontWeight.BOLD),
+                    ft.Text("VUES", size=9, color=MUTED, width=55,
+                            text_align=ft.TextAlign.RIGHT,
+                            weight=ft.FontWeight.BOLD),
+                    ft.Text("♥", size=9, color=MUTED, width=42,
+                            text_align=ft.TextAlign.RIGHT,
+                            weight=ft.FontWeight.BOLD),
+                    ft.Text("💬", size=9, color=MUTED, width=34,
+                            text_align=ft.TextAlign.RIGHT,
+                            weight=ft.FontWeight.BOLD),
+                    ft.Text("↗", size=9, color=MUTED, width=34,
+                            text_align=ft.TextAlign.RIGHT,
+                            weight=ft.FontWeight.BOLD),
+                    ft.Text("ENG.", size=9, color=MUTED, width=44,
+                            text_align=ft.TextAlign.RIGHT,
+                            weight=ft.FontWeight.BOLD),
+                    ft.Container(width=22),
+                ], spacing=4),
+                padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+            )
+        ]
+        for i, ev in enumerate(sorted_vids[:50], 1):
+            tmpl  = (ev.get("prompt_template") or "?").replace(".txt", "")
+            views = ev.get("view_count")
+            likes = ev.get("like_count") or 0
+            comms = ev.get("comment_count") or 0
+            shares = ev.get("share_count") or 0
+            vid_id = ev.get("video_id")
+            eng = 0
+            if views:
+                eng = (likes + comms + shares) / views * 100
+            vid_rows.append(ft.Container(
+                content=ft.Row([
+                    ft.Text(f"{i}", size=10, color=MUTED, width=24),
+                    ft.Text((ev.get("timestamp") or "")[:10], size=10,
+                            color=OUTLINE, width=80, font_family="Cascadia Code"),
+                    ft.Text(tmpl[:28], size=10, color=ON_SURFACE, expand=True),
+                    ft.Text(_fmt_num(views) if views is not None else "…",
+                            size=10, color=PRIMARY if views else MUTED, width=55,
+                            text_align=ft.TextAlign.RIGHT,
+                            weight=ft.FontWeight.BOLD),
+                    ft.Text(_fmt_num(likes), size=10, color=ERROR_C, width=42,
+                            text_align=ft.TextAlign.RIGHT),
+                    ft.Text(_fmt_num(comms), size=10, color="#60a5fa", width=34,
+                            text_align=ft.TextAlign.RIGHT),
+                    ft.Text(_fmt_num(shares), size=10, color=SUCCESS, width=34,
+                            text_align=ft.TextAlign.RIGHT),
+                    ft.Text(f"{eng:.1f}%" if eng else "—",
+                            size=10, color="#f472b6", width=44,
+                            text_align=ft.TextAlign.RIGHT),
+                    ft.IconButton(
+                        ft.Icons.OPEN_IN_NEW, icon_size=14, icon_color=MUTED,
+                        tooltip="Ouvrir sur TikTok" if vid_id else "Vidéo non publiée",
+                        disabled=not vid_id,
+                        on_click=lambda evt, vi=vid_id: _open_tiktok(vi),
+                    ),
+                ], spacing=4),
+                bgcolor=SURFACE_HIGH if i % 2 else SURFACE,
+                border_radius=6,
+                padding=ft.Padding.symmetric(horizontal=8, vertical=3),
+            ))
+
+        videos_tab = ft.Column([
+            ft.Row([
+                search_field,
+                ft.Container(width=8),
+                ft.Text(f"{len(sorted_vids)}", size=11, color=PRIMARY,
+                        weight=ft.FontWeight.BOLD),
+                ft.Text("résultats", size=10, color=OUTLINE),
+            ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ft.Row([
+                ft.Text("Tri :", size=10, color=MUTED),
+                _sort_chip("Vues", "views"),
+                _sort_chip("Likes", "likes"),
+                _sort_chip("Comm.", "comments"),
+                _sort_chip("Partages", "shares"),
+                _sort_chip("Engagement", "engagement"),
+                _sort_chip("Date", "date"),
+            ], spacing=4, wrap=True),
+            ft.Container(height=2),
+            ft.Column(vid_rows if sorted_vids else [
+                ft.Container(
+                    content=ft.Text("Aucune vidéo trouvée." if search
+                                    else "Aucun upload sur cette période.",
+                                    size=12, color=OUTLINE,
+                                    text_align=ft.TextAlign.CENTER),
+                    alignment=ft.Alignment.CENTER, padding=30,
+                )
+            ], spacing=2, scroll=ft.ScrollMode.AUTO, expand=True),
+        ], spacing=8, expand=True)
+
+        # ──────────────────────────────────────────────────────────────────────
+        # ONGLET 4 — TENDANCES & RÉPARTITIONS
+        # ──────────────────────────────────────────────────────────────────────
+        # Distribution des vues (histogramme)
+        buckets = [(0, 500), (500, 1000), (1000, 5000), (5000, 10000),
+                   (10000, 50000), (50000, 10**9)]
+        bucket_labels = ["<500", "500-1k", "1-5k", "5-10k", "10-50k", "50k+"]
+        bucket_counts = [0] * len(buckets)
+        for ev in with_stats:
+            v = ev.get("view_count") or 0
+            for bi, (lo, hi) in enumerate(buckets):
+                if lo <= v < hi:
+                    bucket_counts[bi] += 1
+                    break
+        max_bucket = max(bucket_counts, default=1) or 1
+
+        hist_rows = []
+        for lbl, cnt in zip(bucket_labels, bucket_counts):
+            fill = int(cnt / max_bucket * 280) if cnt else 0
+            hist_rows.append(ft.Row([
+                ft.Text(lbl, size=10, color=ON_SURFACE, width=58),
+                ft.Container(width=fill, height=14, bgcolor=ACCENT, border_radius=3),
+                ft.Container(width=4),
+                ft.Text(str(cnt), size=10, color=PRIMARY,
+                        weight=ft.FontWeight.BOLD),
+            ], vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=2))
+
+        # Cumul vues
+        cumul_views = []
+        running = 0
+        for v in day_views:
+            running += v
+            cumul_views.append(running)
+        max_cumul = max(cumul_views, default=1) or 1
+
+        # Sparkline cumul (ASCII style avec containers)
+        SPARK_H = 60
+        SPARK_W = max(3, int(560 / max(1, len(cumul_views))))
+        spark_bars = []
+        for v in cumul_views:
+            h = max(2, int(v / max_cumul * SPARK_H))
+            spark_bars.append(ft.Container(
+                width=SPARK_W - 1, height=h,
+                bgcolor=PRIMARY, border_radius=1,
+                tooltip=f"Cumul : {_fmt_num(v)} vues"))
+        spark_row = ft.Column(
+            [ft.Row(spark_bars, spacing=1, alignment=ft.MainAxisAlignment.START)],
+            alignment=ft.MainAxisAlignment.END,
+        )
+
+        trends_tab = ft.Column([
+            ft.Container(
+                content=ft.Column([
+                    _section_title("CUMUL DES VUES — PROGRESSION",
+                                   ft.Text(f"Total : {_fmt_num(total_views)}",
+                                           size=10, color=PRIMARY,
+                                           weight=ft.FontWeight.BOLD)),
+                    ft.Container(height=4),
+                    ft.Container(content=spark_row, height=SPARK_H + 4),
+                ], spacing=4),
+                bgcolor=SURFACE_HIGH, border=ft.Border.all(1, BORDER),
+                border_radius=10, padding=12,
+            ),
+            ft.Container(
+                content=ft.Column([
+                    _section_title("DISTRIBUTION DES VUES",
+                                   ft.Text(f"{len(with_stats)} vidéos analysées",
+                                           size=10, color=OUTLINE)),
+                    ft.Container(height=4),
+                    *hist_rows,
+                ], spacing=6),
+                bgcolor=SURFACE_HIGH, border=ft.Border.all(1, BORDER),
+                border_radius=10, padding=12,
+            ),
+            ft.Row([
                 ft.Container(
                     content=ft.Column([
-                        ft.Icon(ft.Icons.HOURGLASS_EMPTY, size=28, color=OUTLINE),
-                        ft.Text("Stats TikTok non disponibles.",
-                                size=11, color=OUTLINE,
-                                text_align=ft.TextAlign.CENTER),
-                        ft.Text(
-                            "Publie les vidéos depuis la boîte TikTok\n"
-                            "puis clique Actualiser.",
-                            size=10, color=MUTED, text_align=ft.TextAlign.CENTER,
-                        ),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6),
-                    alignment=ft.Alignment.CENTER,
-                    bgcolor=SURFACE_HIGH, border_radius=10,
-                    padding=20,
+                        _section_title("VS PÉRIODE PRÉCÉDENTE"),
+                        ft.Container(height=4),
+                        ft.Row([
+                            ft.Text("Uploads", size=10, color=ON_SURFACE, expand=True),
+                            ft.Text(f"{prev_uploads} → {total_ok}", size=10,
+                                    color=MUTED),
+                            ft.Container(width=8),
+                            *(([ft.Icon(_trend(total_ok, prev_uploads)[2], size=12,
+                                        color=_trend(total_ok, prev_uploads)[1]),
+                                ft.Text(_trend(total_ok, prev_uploads)[0], size=10,
+                                        color=_trend(total_ok, prev_uploads)[1],
+                                        weight=ft.FontWeight.BOLD)]
+                              ) if _trend(total_ok, prev_uploads)[0] else
+                             [ft.Text("—", size=10, color=OUTLINE)]),
+                        ], spacing=2, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        ft.Row([
+                            ft.Text("Vues", size=10, color=ON_SURFACE, expand=True),
+                            ft.Text(f"{_fmt_num(prev_views)} → {_fmt_num(total_views)}",
+                                    size=10, color=MUTED),
+                            ft.Container(width=8),
+                            *(([ft.Icon(_trend(total_views, prev_views)[2], size=12,
+                                        color=_trend(total_views, prev_views)[1]),
+                                ft.Text(_trend(total_views, prev_views)[0], size=10,
+                                        color=_trend(total_views, prev_views)[1],
+                                        weight=ft.FontWeight.BOLD)]
+                              ) if _trend(total_views, prev_views)[0] else
+                             [ft.Text("—", size=10, color=OUTLINE)]),
+                        ], spacing=2, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        ft.Row([
+                            ft.Text("Likes", size=10, color=ON_SURFACE, expand=True),
+                            ft.Text(f"{_fmt_num(prev_likes)} → {_fmt_num(total_likes)}",
+                                    size=10, color=MUTED),
+                            ft.Container(width=8),
+                            *(([ft.Icon(_trend(total_likes, prev_likes)[2], size=12,
+                                        color=_trend(total_likes, prev_likes)[1]),
+                                ft.Text(_trend(total_likes, prev_likes)[0], size=10,
+                                        color=_trend(total_likes, prev_likes)[1],
+                                        weight=ft.FontWeight.BOLD)]
+                              ) if _trend(total_likes, prev_likes)[0] else
+                             [ft.Text("—", size=10, color=OUTLINE)]),
+                        ], spacing=2, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    ], spacing=6),
+                    bgcolor=SURFACE_HIGH, border=ft.Border.all(1, BORDER),
+                    border_radius=10, padding=12, expand=True,
                 ),
-            ], spacing=8)
+                ft.Container(
+                    content=ft.Column([
+                        _section_title("ÉCHECS"),
+                        ft.Container(height=4),
+                        *([ft.Row([
+                                ft.Container(width=8, height=8, bgcolor=ERROR_C,
+                                             border_radius=2),
+                                ft.Text(r, size=11, color=ON_SURFACE, expand=True),
+                                ft.Text(str(c), size=11, color=ERROR_C,
+                                        weight=ft.FontWeight.BOLD),
+                            ], spacing=8) for r, c in fail_reasons.most_common()]
+                          if fail_reasons else
+                          [ft.Container(
+                              content=ft.Row([
+                                  ft.Icon(ft.Icons.CHECK_CIRCLE, color=SUCCESS, size=18),
+                                  ft.Text("Aucun échec sur cette période", size=11,
+                                          color=SUCCESS),
+                              ], spacing=8),
+                              padding=ft.Padding.symmetric(vertical=8),
+                          )]),
+                    ], spacing=6),
+                    bgcolor=SURFACE_HIGH, border=ft.Border.all(1, BORDER),
+                    border_radius=10, padding=12, expand=True,
+                ),
+            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.START),
+        ], spacing=10, scroll=ft.ScrollMode.AUTO)
 
-        # ── Dialog ───────────────────────────────────────────────────────────
+        # ──────────────────────────────────────────────────────────────────────
+        # ONGLET 1 — VUE D'ENSEMBLE
+        # ──────────────────────────────────────────────────────────────────────
+        overview_tab = ft.Column([
+            kpi_grid,
+            ft.Container(
+                content=activity_section,
+                bgcolor=SURFACE_HIGH, border=ft.Border.all(1, BORDER),
+                border_radius=10, padding=12,
+            ),
+            ft.Row([
+                ft.Container(content=best_panel, expand=True),
+                ft.Container(content=heat_panel, expand=True),
+            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.START),
+        ], spacing=10, scroll=ft.ScrollMode.AUTO)
+
+        # ──────────────────────────────────────────────────────────────────────
+        # Tabs + dialog
+        # ──────────────────────────────────────────────────────────────────────
         dlg_ref = {"v": None}
+
+        def _set_tab(idx):
+            _stats_state["tab"] = idx
+            if dlg_ref["v"]:
+                _close_dialog(dlg_ref["v"])
+            show_stats()
 
         def on_refresh(ev):
             if dlg_ref["v"]:
                 _close_dialog(dlg_ref["v"])
             toast("Actualisation des stats...", "info")
             def do():
-                subprocess.run(
-                    [PYTHON, str(BASE_DIR / "tiktok" / "fetch_stats.py"), "--update-only"],
-                    cwd=str(BASE_DIR), capture_output=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
-                )
+                try:
+                    subprocess.run(
+                        [PYTHON, str(BASE_DIR / "tiktok" / "fetch_stats.py"), "--update-only"],
+                        cwd=str(BASE_DIR), capture_output=True, timeout=60,
+                        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+                    )
+                except Exception:
+                    pass
                 page.run_thread(show_stats)
             threading.Thread(target=do, daemon=True).start()
 
-        dlg = ft.AlertDialog(
-            modal=True,
-            title=ft.Row([
-                ft.Icon(ft.Icons.BAR_CHART, color=PRIMARY, size=20),
-                ft.Text("Dashboard TikTok", size=15,
-                        weight=ft.FontWeight.BOLD, expand=True),
+        def on_export(ev):
+            try:
+                buf = _io.StringIO()
+                w = _csv.writer(buf)
+                w.writerow(["timestamp", "prompt_template", "upload_ok", "reason",
+                            "video_id", "view_count", "like_count",
+                            "comment_count", "share_count", "title",
+                            "engagement_pct"])
+                for e in history_period:
+                    vc = e.get("view_count") or 0
+                    eng = 0.0
+                    if vc:
+                        eng = ((e.get("like_count") or 0) + (e.get("comment_count") or 0)
+                               + (e.get("share_count") or 0)) / vc * 100
+                    w.writerow([
+                        e.get("timestamp", ""),
+                        e.get("prompt_template", ""),
+                        e.get("upload_ok"),
+                        e.get("reason", ""),
+                        e.get("video_id") or "",
+                        e.get("view_count") if e.get("view_count") is not None else "",
+                        e.get("like_count") if e.get("like_count") is not None else "",
+                        e.get("comment_count") if e.get("comment_count") is not None else "",
+                        e.get("share_count") if e.get("share_count") is not None else "",
+                        e.get("title", ""),
+                        f"{eng:.2f}" if eng else "",
+                    ])
+                out_dir = BASE_DIR / "exports"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                fname = out_dir / f"stats_{now.strftime('%Y%m%d_%H%M%S')}.csv"
+                fname.write_text(buf.getvalue(), encoding="utf-8")
+                toast(f"Export CSV → exports/{fname.name}", "success")
+                try:
+                    os.startfile(str(out_dir))
+                except Exception:
+                    pass
+            except Exception as ex:
+                toast(f"Échec export : {ex}", "error")
+
+        def on_copy_summary(ev):
+            try:
+                summary = (
+                    f"📊 Stats TikTok ({bar_days}j)\n"
+                    f"• {total_ok} upload(s) — taux succès {pct_ok}%\n"
+                    f"• {_fmt_num(total_views)} vues, {_fmt_num(total_likes)} likes\n"
+                    f"• Engagement : {engagement:.2f}%\n"
+                    f"• Streak : {streak} j (record {best_streak})\n"
+                    f"• Meilleur prompt : "
+                    f"{(sorted_templates[0][0] if sorted_templates else '—')}"
+                )
+                page.set_clipboard(summary)
+                toast("Résumé copié dans le presse-papiers", "success")
+            except Exception as ex:
+                toast(f"Échec copie : {ex}", "error")
+
+        last_sync_txt = "—"
+        if last_sync:
+            try:
+                ls = _dt.datetime.fromisoformat(last_sync)
+                delta = (now - ls)
+                if delta.days >= 1:
+                    last_sync_txt = f"il y a {delta.days}j"
+                elif delta.seconds >= 3600:
+                    last_sync_txt = f"il y a {delta.seconds // 3600}h"
+                elif delta.seconds >= 60:
+                    last_sync_txt = f"il y a {delta.seconds // 60}min"
+                else:
+                    last_sync_txt = "à l'instant"
+            except Exception:
+                last_sync_txt = last_sync[:16]
+
+        tab_defs = [
+            ("Vue d'ensemble", ft.Icons.DASHBOARD_OUTLINED, overview_tab),
+            ("Prompts",        ft.Icons.AUTO_AWESOME_OUTLINED, prompts_tab),
+            ("Vidéos",         ft.Icons.VIDEO_LIBRARY_OUTLINED, videos_tab),
+            ("Tendances",      ft.Icons.INSIGHTS_OUTLINED, trends_tab),
+        ]
+
+        def _tab_btn(idx, label, icon):
+            active = (_stats_state["tab"] == idx)
+            return ft.Container(
+                content=ft.Row([
+                    ft.Icon(icon, size=15,
+                            color=PRIMARY if active else MUTED),
+                    ft.Text(label, size=11,
+                            color=PRIMARY if active else MUTED,
+                            weight=ft.FontWeight.BOLD if active else ft.FontWeight.W_500),
+                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                bgcolor=ACCENT_DIM if active else None,
+                border=ft.Border.only(
+                    bottom=ft.BorderSide(2, PRIMARY if active else "transparent"),
+                ),
+                padding=ft.Padding.symmetric(horizontal=14, vertical=10),
+                on_click=lambda ev, _i=idx: _set_tab(_i),
+                ink=True,
+            )
+
+        tab_bar = ft.Container(
+            content=ft.Row(
+                [_tab_btn(i, lbl, ic) for i, (lbl, ic, _) in enumerate(tab_defs)],
+                spacing=2,
+            ),
+            border=ft.Border.only(bottom=ft.BorderSide(1, BORDER)),
+        )
+
+        current_tab_idx = max(0, min(_stats_state["tab"], len(tab_defs) - 1))
+        current_content = tab_defs[current_tab_idx][2]
+
+        tabs = ft.Column([
+            tab_bar,
+            ft.Container(
+                content=current_content,
+                padding=ft.Padding.only(top=14),
+                expand=True,
+            ),
+        ], spacing=0, expand=True)
+
+        header = ft.Column([
+            ft.Row([
+                ft.Icon(ft.Icons.INSIGHTS, color=PRIMARY, size=22),
+                ft.Text("Dashboard TikTok", size=17,
+                        weight=ft.FontWeight.BOLD),
+                ft.Container(expand=True),
+                ft.Row([
+                    ft.Icon(ft.Icons.SYNC, size=12, color=MUTED),
+                    ft.Text(f"Sync : {last_sync_txt}", size=10, color=MUTED),
+                ], spacing=4),
                 ft.IconButton(
-                    ft.Icons.REFRESH, icon_color=MUTED, icon_size=18,
+                    ft.Icons.CONTENT_COPY, icon_color=MUTED, icon_size=16,
+                    tooltip="Copier un résumé dans le presse-papiers",
+                    on_click=on_copy_summary,
+                ),
+                ft.IconButton(
+                    ft.Icons.FILE_DOWNLOAD, icon_color=MUTED, icon_size=18,
+                    tooltip="Exporter en CSV",
+                    on_click=on_export,
+                ),
+                ft.IconButton(
+                    ft.Icons.REFRESH, icon_color=PRIMARY, icon_size=18,
                     tooltip="Actualiser les stats depuis TikTok",
                     on_click=on_refresh,
                 ),
-            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ft.Row([
+                ft.Text("Période :", size=10, color=MUTED),
+                period_chips,
+                ft.Container(expand=True),
+                ft.Text(
+                    f"{total_ok} uploads · {len(with_stats)} avec stats",
+                    size=10, color=OUTLINE,
+                ),
+            ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        ], spacing=8)
+
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=header,
             content=ft.Container(
-                content=ft.Column([
-                    kpi_row,
-                    ft.Divider(height=1, color=BORDER),
-                    activity_section,
-                    ft.Divider(height=1, color=BORDER),
-                    ft.Row([
-                        ft.Container(content=prompt_col, width=300),
-                        ft.Container(width=1, bgcolor=BORDER),
-                        ft.Container(content=video_col, expand=True,
-                                     padding=ft.Padding.only(left=16)),
-                    ], spacing=0,
-                       vertical_alignment=ft.CrossAxisAlignment.START),
-                ], spacing=14, scroll=ft.ScrollMode.AUTO),
-                width=720, height=520,
+                content=tabs,
+                width=920, height=620,
                 padding=ft.Padding.symmetric(vertical=4),
             ),
             actions=[
@@ -2198,8 +3166,17 @@ def main(page: ft.Page):
         # ── 0. Matching request — toujours vérifié, même en mode action ──
         try:
             if MATCHING_REQUEST_FILE.exists() and not matching_popup_open["ref"]:
-                req = json.loads(MATCHING_REQUEST_FILE.read_text(encoding="utf-8"))
-                page.run_thread(lambda r=req: show_matching_popup(r))
+                # En mode auto, un fichier de requête est forcément stale
+                # (laissé par un run précédent qui a crashé). On le purge.
+                if matching_mode["ref"] != "manual":
+                    try:
+                        MATCHING_REQUEST_FILE.unlink(missing_ok=True)
+                        MATCHING_RESPONSE_FILE.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                else:
+                    req = json.loads(MATCHING_REQUEST_FILE.read_text(encoding="utf-8"))
+                    page.run_thread(lambda r=req: show_matching_popup(r))
         except Exception:
             pass
 
@@ -2679,6 +3656,13 @@ def main(page: ft.Page):
                     MATCHING_RESPONSE_FILE.write_text(
                         json.dumps({"puppet": chosen}), encoding="utf-8"
                     )
+                except Exception:
+                    pass
+                # Filet de sécurité : si main_v3.py n'est pas en cours
+                # (script à l'arrêt), il ne supprimera pas le request file
+                # et la popup se ré-ouvrirait au prochain tick.
+                try:
+                    MATCHING_REQUEST_FILE.unlink(missing_ok=True)
                 except Exception:
                     pass
                 matching_popup_open["ref"] = False

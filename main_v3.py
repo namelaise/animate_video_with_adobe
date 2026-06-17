@@ -517,10 +517,28 @@ def _upload_with_account(
       - duet      = TIKTOK_AUTO_PUBLISH_ALLOW_DUET (défaut 0)
       - stitch    = TIKTOK_AUTO_PUBLISH_ALLOW_STITCH (défaut 0)
     """
-    token = get_access_token(account_id)
     label = get_account_label(account_id)
+    use_playwright = os.getenv("TIKTOK_USE_PLAYWRIGHT", "0").strip() == "1"
+    token = None if use_playwright else get_access_token(account_id)
 
-    def _post(tok: str = token):
+    def _post(tok: str | None = token):
+        if use_playwright:
+            script = str(Path(__file__).parent / "pipeline" / "post_tiktok_playwright.py")
+            cmd = [python_exe, script, "--video", final_mp4, "--account-id", account_id]
+            privacy = os.getenv("TIKTOK_AUTO_PUBLISH_PRIVACY", "PUBLIC_TO_EVERYONE").strip()
+            cmd += ["--privacy", privacy]
+            if caption:
+                cmd += ["--caption", caption]
+            if os.getenv("TIKTOK_AUTO_PUBLISH_ALLOW_COMMENT", "1").strip() == "1":
+                cmd.append("--allow-comment")
+            if os.getenv("TIKTOK_AUTO_PUBLISH_ALLOW_DUET", "0").strip() == "1":
+                cmd.append("--allow-duet")
+            if os.getenv("TIKTOK_AUTO_PUBLISH_ALLOW_STITCH", "0").strip() == "1":
+                cmd.append("--allow-stitch")
+            if os.getenv("TIKTOK_PLAYWRIGHT_HEADLESS", "0").strip() == "1":
+                cmd.append("--headless")
+            return run_cmd_capture(cmd, log_path)
+
         cmd = [python_exe, str(Path(__file__).parent / "pipeline" / "post_tiktok_inbox.py"),
                "--video", final_mp4, "--poll", "--token", tok]
         if direct:
@@ -536,21 +554,32 @@ def _upload_with_account(
                 cmd.append("--allow-stitch")
         return run_cmd_capture(cmd, log_path)
 
-    mode_label = "DIRECT (auto-publish)" if direct else "INBOX (auto)"
+    if use_playwright:
+        mode_label = "PLAYWRIGHT (bypass API)"
+    else:
+        mode_label = "DIRECT (auto-publish)" if direct else "INBOX (auto)"
     log.info(f"📤 Upload TikTok → {label} (compte {account_id}) — mode {mode_label}")
 
     rc, out, err = _post()
     if rc == 0:
-        log.info(f"✅ Upload TikTok OK (INBOX) — {label}")
+        log.info(f"✅ Upload TikTok OK ({mode_label}) — {label}")
         mark_account_used(account_id)
         save_upload_entry(_parse_publish_id(out), ok=True, reason="ok")
         return True, "ok"
 
     blob = out + "\n" + err
 
-    if _contains_spam_risk(blob):
+    if _contains_spam_risk(blob) or (use_playwright and rc == 3):
         log.error(f"🚫 Upload TikTok refusé spam risk ({label}): {TIKTOK_SPAM_RISK_KEY}")
         return False, "spam_risk"
+
+    if use_playwright:
+        if rc == 2:
+            log.error(f"🔐 Session TikTok absente/expirée ({label}). "
+                      f"Lance : python tools/login_tiktok.py --account-id {account_id}")
+            return False, "token_failed"
+        log.error(f"❌ Upload TikTok PLAYWRIGHT échoué ({label}) — voir {log_path.name}")
+        return False, "other_failed"
 
     # Token invalide → refresh + retry
     if _detect_token_issue(blob):

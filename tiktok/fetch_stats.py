@@ -17,6 +17,9 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
+# Permet l'import de tiktok_account_manager même quand le script est lancé depuis la racine
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 load_dotenv()
 
 BASE_DIR        = Path(os.getenv("BASE_DIR", Path(__file__).parent.parent))
@@ -31,6 +34,15 @@ VIDEO_QUERY_URL = "https://open.tiktokapis.com/v2/video/query/"
 # ── Token ──────────────────────────────────────────────────────────────────────
 
 def get_token() -> str:
+    # Priorité 1 : compte actif via le gestionnaire multi-compte
+    try:
+        from tiktok_account_manager import get_access_token
+        tok = (get_access_token() or "").strip()
+        if tok:
+            return tok
+    except Exception:
+        pass
+    # Fallback : .env / fichier tokens (compat ancien)
     tok = (os.getenv("TIKTOK_USER_ACCESS_TOKEN") or "").strip()
     if not tok and TOKEN_FILE.exists():
         try:

@@ -22,7 +22,7 @@ args = ap.parse_args()
 CLIENT_KEY    = (os.getenv("TIKTOK_CLIENT_KEY") or "").strip()
 CLIENT_SECRET = (os.getenv("TIKTOK_CLIENT_SECRET") or "").strip()
 REDIRECT_URI  = (os.getenv("TIKTOK_REDIRECT_URI") or "http://127.0.0.1:53682/callback").strip()
-SCOPES        = (os.getenv("TIKTOK_SCOPES") or "user.info.basic,video.upload,video.publish").strip()
+SCOPES        = (os.getenv("TIKTOK_SCOPES") or "user.info.basic,user.info.stats,video.upload,video.publish,video.list").strip()
 
 # Optionnel: forcer le chemin de Firefox (Windows)
 FIREFOX_PATH  = (os.getenv("FIREFOX_PATH") or "").strip()  # ex: C:\Program Files\Mozilla Firefox\firefox.exe
@@ -111,7 +111,14 @@ def wait_code_in_browser(auth_url: str, expected_state: str, timeout_sec=240) ->
     CallbackHandler.state = None
     CallbackHandler.path_seen = None
 
-    srv = HTTPServer(("127.0.0.1", port), CallbackHandler)
+    try:
+        srv = HTTPServer(("127.0.0.1", port), CallbackHandler)
+    except OSError as e:
+        raise SystemExit(
+            f"[ERR] Port {port} déjà utilisé ({e}). "
+            f"Une autre instance de auth_tiktok_token_manager.py tourne déjà — "
+            f"ferme-la avant de relancer la connexion."
+        )
     th = threading.Thread(target=srv.serve_forever, daemon=True)
     th.start()
 

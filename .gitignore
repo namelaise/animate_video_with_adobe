@@ -1,6 +1,10 @@
 # Ignore fichiers sensibles
 .env
 
+# Config locale Claude Code / marqueurs machine
+.claude/
+.ytdlp_last_update
+
 # Dossiers Python
 __pycache__/
 *.py[cod]
@@ -41,6 +45,7 @@ video_background/
 video_finale/
 xld_file/
 playwright-profile/
+playwright-profiles/
 download/
 logs/
 pending_posts/

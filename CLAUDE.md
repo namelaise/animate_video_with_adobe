@@ -30,7 +30,8 @@ gui.py  (processus séparé, lancé par daily_launcher_gui.bat)
 │   ├── automate_diarization.py
 │   ├── segments_processing.py
 │   ├── assemble_guarded.py
-│   └── post_tiktok_inbox.py
+│   ├── post_tiktok_inbox.py        # voie API officielle (inbox/direct)
+│   └── post_tiktok_playwright.py   # bypass Playwright (en attendant audit Direct Post)
 │
 ├── tiktok/                 ← API & auth TikTok (importé via sys.path)
 │   ├── tiktok_account_manager.py
@@ -56,7 +57,8 @@ gui.py  (processus séparé, lancé par daily_launcher_gui.bat)
 │
 ├── tools/                  ← helpers manuels (connexion navigateur)
 │   ├── login_adobe.py
-│   └── login_gemini.py
+│   ├── login_gemini.py
+│   └── login_tiktok.py      # sauvegarde la session TikTok par compte
 │
 └── docs/                   ← landing page GitHub Pages (index/privacy/tos.html)
 ```
@@ -154,6 +156,22 @@ Voir `.env.example` à la racine pour la liste complète. Variables clés :
 L'upload se fait directement depuis `main_v3.py` à la fin du pipeline.
 Le GUI permet le retry manuel des vidéos en `pending_posts/`.
 
+## Mode publication TikTok : Playwright (bypass) vs API
+
+Le routage se fait dans `_upload_with_account()` (main_v3.py) via `TIKTOK_USE_PLAYWRIGHT` :
+
+- `TIKTOK_USE_PLAYWRIGHT=0` (défaut) → `pipeline/post_tiktok_inbox.py` (Content Posting API officielle, mode INBOX/brouillon par défaut ; DIRECT si `direct_post_enabled and auto_publish`)
+- `TIKTOK_USE_PLAYWRIGHT=1` → `pipeline/post_tiktok_playwright.py` (bypass conservé en secours)
+  - Réutilise la session navigateur sauvée dans `playwright-profiles/tiktok_<account_id>/`
+  - Setup : `python tools/login_tiktok.py --account-id <id>` (par compte)
+  - Pas de quota API, pas de scope `video.publish` requis
+
+Codes retour de `post_tiktok_playwright.py` :
+- `0` succès (stdout `publish_id=playwright_<timestamp>`)
+- `2` pas de session — relancer `login_tiktok.py`
+- `3` spam_risk détecté (mapping vers `pending_posts/`)
+- `1` autre échec
+
 ## Points de vigilance
 
 - `main_v3.py` est lancé en subprocess avec `-X utf8 -u` pour stdout en temps réel
@@ -184,7 +202,11 @@ daily_launcher_gui.bat
 # Rafraîchir les stats TikTok manuellement
 python tiktok/fetch_stats.py --update-only
 
-# Connexion manuelle Adobe / Gemini
+# Connexion manuelle Adobe / Gemini / TikTok
 python tools/login_adobe.py
 python tools/login_gemini.py
+python tools/login_tiktok.py --account-id acc_1   # un profil par compte TikTok
+
+# Tester le post Playwright manuellement
+python pipeline/post_tiktok_playwright.py --video Download.mp4 --caption "test" --privacy PUBLIC_TO_EVERYONE --allow-comment
 ```

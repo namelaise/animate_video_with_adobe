@@ -46,7 +46,10 @@ load_dotenv(BASE_DIR / ".env")
 ACCOUNTS_FILE = BASE_DIR / "config" / "tiktok_accounts.json"
 AVATARS_DIR   = BASE_DIR / "config" / "avatars"
 
-TIKTOK_USER_INFO_URL = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,avatar_url,display_name,username"
+_USER_INFO_BASE      = "https://open.tiktokapis.com/v2/user/info/"
+_FIELDS_FULL         = "open_id,avatar_url,display_name,username"
+_FIELDS_BASIC        = "open_id,avatar_url,display_name"
+TIKTOK_USER_INFO_URL = f"{_USER_INFO_BASE}?fields={_FIELDS_FULL}"
 
 
 # ─────────────────────────────────────────────
@@ -128,15 +131,12 @@ def _profile_placeholder(acc: dict) -> bool:
     )
 
 
-def _fetch_and_update_profile(acc: dict) -> bool:
-    """Appelle l'API TikTok pour récupérer username, display_name et avatar."""
-    token = acc.get("access_token", "")
-    if not token:
-        acc["profile_error"] = "Aucun access_token"
-        return False
+def _call_user_info(token: str, fields: str) -> tuple[dict | None, str]:
+    """Appelle /v2/user/info/ avec un set de champs donné.
+    Retourne (data_user, error_str). error_str vide si OK."""
     try:
         req = urllib.request.Request(
-            TIKTOK_USER_INFO_URL,
+            f"{_USER_INFO_BASE}?fields={fields}",
             headers={
                 "Authorization": f"Bearer {token}",
                 "User-Agent": "MrMartin/1.0",
@@ -145,38 +145,54 @@ def _fetch_and_update_profile(acc: dict) -> bool:
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode())
         if data.get("error", {}).get("code") not in (None, "ok"):
-            acc["profile_error"] = json.dumps(data.get("error"), ensure_ascii=False)
-            return False
-        user = data.get("data", {}).get("user", {})
+            return None, json.dumps(data.get("error"), ensure_ascii=False)
+        user = data.get("data", {}).get("user") or {}
         if not user:
-            acc["profile_error"] = "Réponse TikTok sans data.user"
-            return False
-        if user.get("username"):
-            acc["username"] = "@" + user["username"].lstrip("@")
-        if user.get("display_name"):
-            acc["display_name"] = user["display_name"]
-        if user.get("open_id"):
-            acc["open_id"] = user["open_id"]
-        if user.get("avatar_url"):
-            acc["avatar_url"] = user["avatar_url"]
-            # Télécharger l'avatar
-            local = download_avatar(user["avatar_url"], acc["id"])
-            if local:
-                acc["avatar_local"] = local
-        acc["profile_error"] = ""
-        acc["profile_refreshed_at"] = datetime.now().isoformat(timespec="seconds")
-        return True
+            return None, "Réponse TikTok sans data.user"
+        return user, ""
     except urllib.error.HTTPError as e:
         body = ""
         try:
             body = e.read().decode(errors="ignore")[:300]
         except Exception:
             pass
-        acc["profile_error"] = f"HTTP {e.code}: {body or e.reason}"
-        return False
+        return None, f"HTTP {e.code}: {body or e.reason}"
     except Exception as e:
-        acc["profile_error"] = str(e)
+        return None, str(e)
+
+
+def _fetch_and_update_profile(acc: dict) -> bool:
+    """Appelle l'API TikTok pour récupérer username, display_name et avatar.
+    Si le scope user.info.profile n'est pas autorisé (username), retombe
+    automatiquement sur les champs de base (display_name + avatar)."""
+    token = acc.get("access_token", "")
+    if not token:
+        acc["profile_error"] = "Aucun access_token"
         return False
+
+    user, error = _call_user_info(token, _FIELDS_FULL)
+    if user is None and "scope_not_authorized" in (error or ""):
+        # Vieux token sans user.info.profile → fallback champs de base
+        user, error = _call_user_info(token, _FIELDS_BASIC)
+
+    if user is None:
+        acc["profile_error"] = error or "Erreur inconnue"
+        return False
+
+    if user.get("username"):
+        acc["username"] = "@" + user["username"].lstrip("@")
+    if user.get("display_name"):
+        acc["display_name"] = user["display_name"]
+    if user.get("open_id"):
+        acc["open_id"] = user["open_id"]
+    if user.get("avatar_url"):
+        acc["avatar_url"] = user["avatar_url"]
+        local = download_avatar(user["avatar_url"], acc["id"])
+        if local:
+            acc["avatar_local"] = local
+    acc["profile_error"] = ""
+    acc["profile_refreshed_at"] = datetime.now().isoformat(timespec="seconds")
+    return True
 
 
 def download_avatar(avatar_url: str, account_id: str) -> str:
