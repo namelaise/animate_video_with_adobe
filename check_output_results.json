@@ -1,0 +1,17 @@
+{
+  "test_video_transitions.mp4": {
+    "size_bytes": 86507568,
+    "size_mb": 82.5,
+    "duration_s": 0.0
+  },
+  "test_short_flash2.mp4": {
+    "size_bytes": 212598832,
+    "size_mb": 202.75,
+    "duration_s": 0.0
+  },
+  "test_short.mp4": {
+    "size_bytes": 2863910,
+    "size_mb": 2.73,
+    "duration_s": 15.03
+  }
+}
